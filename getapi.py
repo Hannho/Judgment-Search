@@ -33,10 +33,10 @@ def get_api_token(username, password):
             return None
             
     except Exception as e:
-        print("連線發生錯誤 (請確認是否在凌晨 0 點至 6 點間執行):", e)
+       print("連線發生錯誤 (請確認是否在凌晨 0 點至 6 點間執行):", e)
 
 # 請將這裡替換成你剛剛拿到的帳號與密碼
-my_user = "hannidozon"
+my_user = 'hannidozone'
 my_pwd = "Hann0829"
 
 # 執行驗證
