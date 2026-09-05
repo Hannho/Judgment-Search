@@ -1,22 +1,25 @@
 import os
+import sys
+from dotenv import load_dotenv
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains import create_retrieval_chain
 
-# 1. 填入你剛剛取得的 OpenAI API Key (保留雙引號)
-
-from dotenv import load_dotenv
-
-# 讀取 .env 檔案中的變數
+# 1. 讀取 .env 檔案
 load_dotenv() 
 
-# 從環境變數中取得金鑰，不要寫死在程式碼裡
-os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
-# 2. 準備內部資料 (這裡模擬一份關於車輛尋路的說明)
+api_key = os.getenv("GOOGLE_API_KEY")
+if not api_key:
+    print("🚨 錯誤：找不到 GOOGLE_API_KEY！")
+    sys.exit()
+
+os.environ["GOOGLE_API_KEY"] = api_key
+
+# 準備內部資料
 docs = [
     Document(page_content="在 Unity 遊戲引擎中，NavMesh (導航網格) 是用來實現角色自動尋路的核心元件。若要讓車輛在沒有固定目的地的網格上隨機移動，並在遇見轉彎時自動轉向，可以透過 Raycast 偵測前方障礙物或路徑邊緣，結合 NavMeshAgent 的 velocity 屬性來動態計算轉向角度。")
 ]
@@ -25,17 +28,21 @@ docs = [
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=20)
 splits = text_splitter.split_documents(docs)
 
-# 3. 向量化與儲存 (這裡會消耗微量的 OpenAI API 費用，將文字轉為向量)
+# 3. 向量化 (使用最新官方推薦的 gemini-embedding-2-preview)
 vectorstore = Chroma.from_documents(
     documents=splits, 
-    embedding=OpenAIEmbeddings(model="text-embedding-3-small") # 指定最新的向量模型，便宜且精準
+    embedding=GoogleGenerativeAIEmbeddings(
+        model="gemini-embedding-2-preview",
+        google_api_key=api_key
+    ) 
 )
 retriever = vectorstore.as_retriever(search_kwargs={"k": 2})
 
-# 4. 初始化 OpenAI 對話模型
-llm = ChatOpenAI(
-    model="gpt-3.5-turbo", # 也可以換成 gpt-4o 或 gpt-4o-mini
-    temperature=0          # 設為 0 代表回答越精確、不隨便發散
+# 4. 初始化 Gemini 對話模型
+llm = ChatGoogleGenerativeAI(
+    model="gemini-3.6-flash", 
+    temperature=0,
+    google_api_key=api_key
 )
 
 # 設計提示詞
@@ -52,11 +59,11 @@ prompt = ChatPromptTemplate.from_messages([
     ("human", "{input}"),
 ])
 
-# 5. 串接工作流
+# 串接工作流
 question_answer_chain = create_stuff_documents_chain(llm, prompt)
 rag_chain = create_retrieval_chain(retriever, question_answer_chain)
 
-# 6. 提問與執行
+# 提問與執行
 question = "在 Unity 中要怎麼讓車輛遇到轉彎才自動轉向？"
 print(f"使用者提問：{question}")
 
