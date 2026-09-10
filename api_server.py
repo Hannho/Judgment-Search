@@ -37,7 +37,7 @@ def ask_ai_multiple(query: MultiQAQuery):
     context = "\n\n---\n\n".join(texts_to_read)
     
     # 💡 直接呼叫 Gemini 模型，不再使用 Chroma
-    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", temperature=0)
+    llm = ChatGoogleGenerativeAI(model="gemini-3.7-flash", temperature=0)
     
     prompt_template = ChatPromptTemplate.from_messages([
         ("system", "你是一位專業的法律助理。請綜合以下提供的 [篩選後裁判書內容] 來回答問題。\n"

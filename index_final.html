@@ -29,6 +29,8 @@
         .result-title-link { color: #0000cc; text-decoration: none; cursor: pointer; font-weight: bold; font-size: 1.05em; }
         .result-title-link:hover { text-decoration: underline; color: #cc0000; }
         .snippet { color: #555; font-size: 0.9em; margin-top: 8px; display: block; line-height: 1.5; }
+        .main-text-tag { color: #d9534f; font-weight: bold; }
+        .summary-tag { color: #999; font-weight: bold; }
         
         /* 歷審紀錄區塊 */
         .history-box { background: #fff8e1; border-left: 4px solid #ffc107; padding: 15px; margin: 15px 0; font-size: 0.95em; }
@@ -103,6 +105,7 @@
         }
 
         function getCourtName(id) {
+            if (!id) return "未知法院";
             const code = id.split(',')[0].substring(0, 3); 
             return courtMapping[code] || code;
         }
@@ -129,10 +132,13 @@
             const keyword = document.getElementById('contentInput').value.trim();
 
             currentFilteredData = judgmentsData.filter(item => {
-                return (court === "" || item.id.includes(court)) &&
-                       (caseNo === "" || item.case_no.includes(caseNo)) &&
-                       (title === "" || item.title.includes(title)) &&
-                       (keyword === "" || item.content.includes(keyword));
+                const idParts = item.id ? item.id.split(',') : [];
+                const searchCaseNo = item.case_no || idParts[3] || "";
+                
+                return (court === "" || (item.id && item.id.includes(court))) &&
+                       (caseNo === "" || searchCaseNo.includes(caseNo)) &&
+                       (title === "" || (item.title && item.title.includes(title))) &&
+                       (keyword === "" || (item.content && item.content.includes(keyword)));
             });
             displayResults(currentFilteredData);
             
@@ -147,18 +153,49 @@
             if (data.length === 0) return resultsDiv.innerHTML = `<p>找不到符合條件的裁判書。</p>`;
 
             let html = `<p style="text-align: right; color: #555; font-size: 0.9em; margin: 0 0 10px 0;">共 ${data.length} 筆</p>`;
-            html += `<table class="result-table"><thead><tr><th width="70%">裁判字號 (點擊查看)</th><th width="30%">日期</th></tr></thead><tbody>`;
+            html += `<table class="result-table">
+                        <thead>
+                            <tr>
+                                <th width="5%">序號</th>
+                                <th width="65%">裁判字號 (主文摘要)</th>
+                                <th width="15%">日期</th>
+                                <th width="15%">案由</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
             
-            data.forEach((item) => {
-                const fullTitle = `${getCourtName(item.id)} ${item.year} 年度 ${item.case_type} 字第 ${item.case_no} 號裁判`;
-                const preview = item.content.length > 50 ? item.content.substring(0, 50) + '...' : item.content;
+            data.forEach((item, index) => {
+                // 💡 案號防呆機制：若 JSON 中的欄位為空，自動從 id 解析補位
+                const idParts = item.id ? item.id.split(',') : [];
+                const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
+                const displayType = (item.case_type && item.case_type.trim() !== "") ? item.case_type : (idParts[2] || "");
+                const displayNo = (item.case_no && item.case_no.trim() !== "") ? item.case_no : (idParts[3] || "");
+
+                const courtName = getCourtName(item.id);
+                const fullTitle = `${courtName} ${displayYear} 年度 ${displayType} 字第 ${displayNo} 號裁判`;
+                const rocDate = formatROCDate(item.date);
+                
+                // 💡 主文與內文降級顯示機制
+                let displaySnippet = "";
+                if (item.main_text && item.main_text.trim() !== "") {
+                    const truncatedMain = item.main_text.length > 100 ? item.main_text.substring(0, 100) + '...' : item.main_text;
+                    displaySnippet = `<span class="main-text-tag">【主文】</span> ${truncatedMain}`; 
+                } else if (item.content && item.content.trim() !== "") {
+                    const previewContent = item.content.length > 100 ? item.content.substring(0, 100) + '...' : item.content;
+                    displaySnippet = `<span class="summary-tag">【摘要】</span> ${previewContent}`;
+                } else {
+                    displaySnippet = "<span style='color: #999;'>(此案件無內容)</span>";
+                }
+
                 html += `
                     <tr>
+                        <td>${index + 1}.</td>
                         <td>
                             <a class="result-title-link" onclick="showFullContent('${item.id}')">${fullTitle}</a>
-                            <span class="snippet">${preview}</span>
+                            <span class="snippet">${displaySnippet}</span>
                         </td>
-                        <td>${formatROCDate(item.date)}</td>
+                        <td>${rocDate}</td>
+                        <td>${item.title || "無案由"}</td>
                     </tr>`;
             });
             resultsDiv.innerHTML = html + `</tbody></table>`;
@@ -168,8 +205,15 @@
             const item = judgmentsData.find(j => j.id === id);
             if (!item) return;
 
-            document.getElementById('sideTitle').textContent = `${getCourtName(item.id)} ${item.year} 年度 ${item.case_type} 字第 ${item.case_no} 號裁判`;
-            document.getElementById('sideMeta').innerHTML = `<strong>日期：</strong>${formatROCDate(item.date)} &nbsp;|&nbsp; <strong>案由：</strong>${item.title}`;
+            // 確保詳情區的案號也是使用防呆機制組裝的
+            const idParts = item.id ? item.id.split(',') : [];
+            const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
+            const displayType = (item.case_type && item.case_type.trim() !== "") ? item.case_type : (idParts[2] || "");
+            const displayNo = (item.case_no && item.case_no.trim() !== "") ? item.case_no : (idParts[3] || "");
+            const fullTitle = `${getCourtName(item.id)} ${displayYear} 年度 ${displayType} 字第 ${displayNo} 號裁判`;
+
+            document.getElementById('sideTitle').textContent = fullTitle;
+            document.getElementById('sideMeta').innerHTML = `<strong>日期：</strong>${formatROCDate(item.date)} &nbsp;|&nbsp; <strong>案由：</strong>${item.title || "無"}`;
             document.getElementById('sideBody').textContent = item.content;
             document.getElementById('sidePanel').style.display = "block";
 
@@ -178,7 +222,7 @@
             historyBox.style.display = "none";
             loadingBox.style.display = "block";
 
-            // 呼叫爬蟲 API
+            // 呼叫歷審爬蟲 API
             fetch('http://localhost:8000/api/get_history', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -228,12 +272,16 @@
 
             answerBox.style.display = "block";
             
-            // 擷取要送給 AI 的內容
+            // 擷取要送給 AI 的內容 (同樣套用防呆案號)
             const contentsToSent = currentFilteredData.slice(0, maxCasesToAnalyze).map(item => {
-                return `【${item.year}年度${item.case_type}字第${item.case_no}號】\n${item.content}`;
+                const idParts = item.id ? item.id.split(',') : [];
+                const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
+                const displayType = (item.case_type && item.case_type.trim() !== "") ? item.case_type : (idParts[2] || "");
+                const displayNo = (item.case_no && item.case_no.trim() !== "") ? item.case_no : (idParts[3] || "");
+                return `【${displayYear}年度${displayType}字第${displayNo}號】\n${item.content}`;
             });
 
-            // 呼叫你的後端 AI API
+            // 呼叫 FastAPI 後端
             fetch('http://localhost:8000/api/ask_multiple', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -249,7 +297,7 @@
             })
             .catch(err => {
                 console.error(err);
-                answerBox.innerHTML = `<span style="color:red;">連線失敗，請確認 FastAPI 後端伺服器是否支援 /api/ask_multiple 路徑。</span>`;
+                answerBox.innerHTML = `<span style="color:red;">連線失敗，請確認 FastAPI 後端伺服器是否啟動。</span>`;
             });
         }
     </script>
