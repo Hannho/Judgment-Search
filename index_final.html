@@ -5,13 +5,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>裁判書搜尋與歷審查詢系統</title>
     <style>
-        body { font-family: "微軟正黑體", Arial, sans-serif; max-width: 1200px; margin: 20px auto; line-height: 1.6; color: #333; }
+        body { font-family: "微軟正黑體", Arial, sans-serif; max-width: 1250px; margin: 20px auto; line-height: 1.6; color: #333; }
         
-        /* 搜尋與 AI 條件區塊 */
-        .search-box { background: #eef2eb; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #d0dcae; }
-        .search-box input, .search-box select { padding: 8px; margin: 5px; width: calc(25% - 15px); box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-        .search-box button { padding: 8px 20px; background: #4a7766; color: white; border: none; cursor: pointer; border-radius: 4px; margin-left: 5px; font-weight: bold; }
-        .search-box button:hover { background: #365b4d; }
+        /* 搜尋條件與進階面板 */
+        .search-box { background: #eef2eb; padding: 18px 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #d0dcae; }
+        .basic-search-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .basic-search-row input, .basic-search-row select { padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        
+        .btn-primary { padding: 8px 22px; background: #4a7766; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        .btn-primary:hover { background: #365b4d; }
+        .btn-toggle { padding: 8px 16px; background: #fff; color: #4a7766; border: 1px solid #4a7766; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        .btn-toggle:hover { background: #f0f5f2; }
+        .btn-reset { padding: 8px 14px; background: #888; color: white; border: none; cursor: pointer; border-radius: 4px; }
+        .btn-reset:hover { background: #666; }
+
+        /* 錯誤/提示訊息條 */
+        .alert-error { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; padding: 10px 15px; border-radius: 4px; margin-top: 12px; display: none; font-size: 0.9em; font-weight: bold; }
+
+        /* 關鍵字高亮標記 */
+        .highlight-kw { 
+            background-color: #ffe082; 
+            color: #b71c1c; 
+            font-weight: bold; 
+            padding: 1px 3px; 
+            border-radius: 3px; 
+        }
+
+        /* 仿司法院進階搜尋表格 */
+        .advanced-panel { margin-top: 15px; border-top: 1px dashed #b5c7ad; padding-top: 15px; }
+        .adv-table { width: 100%; border-collapse: collapse; background: #fbfdfa; border: 1px solid #c9d8c3; font-size: 0.92em; }
+        .adv-table td { padding: 8px 12px; border-bottom: 1px solid #dce7d7; vertical-align: middle; }
+        .adv-label { width: 110px; background-color: #dbe6d5; font-weight: bold; color: #2e4d3f; text-align: center; border-right: 1px solid #c9d8c3; }
+        .adv-table input[type="text"], .adv-table input[type="number"] { padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em; }
+        .input-mini { width: 60px; text-align: center; }
+        .input-short { width: 100px; text-align: center; }
+        .input-medium { width: 260px; }
+        .input-wide { width: 85%; }
+        .hint-text { color: #d9534f; font-size: 0.85em; margin-left: 8px; }
 
         /* 左右分欄排版 */
         .main-container { display: flex; gap: 20px; align-items: flex-start; }
@@ -43,16 +73,86 @@
 
     <h2>⚖️ 裁判書搜尋與歷審查詢系統</h2>
 
-    <!-- 搜尋條件區 -->
+    <!-- 搜尋條件區塊 -->
     <div class="search-box">
-        <select id="courtInput"><option value="">全部法院</option></select>
-        <input type="text" id="caseNoInput" placeholder="裁判案號 (如: 820)">
-        <input type="text" id="titleInput" placeholder="案由 (如: 毒品)">
-        <input type="text" id="contentInput" placeholder="全文檢索">
-        <button onclick="searchJudgments()">搜尋</button>
+        <div class="basic-search-row">
+            <select id="courtInput" style="width: 200px;"><option value="">全部法院</option></select>
+            <input type="text" id="quickKeywordInput" placeholder="全文或案號快速檢索 (多個關鍵字以空格分開)..." style="flex: 1; min-width: 220px;">
+            <button class="btn-primary" onclick="searchJudgments()">🔍 開始搜尋</button>
+            <button class="btn-toggle" type="button" onclick="toggleAdvancedSearch()">⚙️ <span id="toggleText">展開進階搜尋</span></button>
+            <button class="btn-reset" type="button" onclick="resetSearch()">重設</button>
+        </div>
+
+        <!-- 錯誤提示條 -->
+        <div id="searchErrorMessage" class="alert-error"></div>
+
+        <!-- 司法院風格進階搜尋面板 -->
+        <div id="advancedPanel" class="advanced-panel" style="display: none;">
+            <table class="adv-table">
+                <tr>
+                    <td class="adv-label">案件類別</td>
+                    <td>
+                        <label><input type="checkbox" name="caseCategory" value="憲法"> 憲法</label>&nbsp;&nbsp;
+                        <label><input type="checkbox" name="caseCategory" value="民事"> 民事</label>&nbsp;&nbsp;
+                        <label><input type="checkbox" name="caseCategory" value="刑事"> 刑事</label>&nbsp;&nbsp;
+                        <label><input type="checkbox" name="caseCategory" value="行政"> 行政</label>&nbsp;&nbsp;
+                        <label><input type="checkbox" name="caseCategory" value="懲戒"> 懲戒</label>
+                        <span class="hint-text">(未勾選預設為全選)</span>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="adv-label">裁判字號</td>
+                    <td>
+                        <input type="text" id="advYear" class="input-mini" placeholder="115"> 年度&nbsp;
+                        <input type="text" id="advCaseType" class="input-short" placeholder="簡/訴/交易"> 字第&nbsp;
+                        <input type="text" id="advNoStart" class="input-mini" placeholder="號數起"> 號
+                        至 <input type="text" id="advNoEnd" class="input-mini" placeholder="號數迄"> 號
+                        <span style="color: #666; font-size: 0.85em; margin-left: 8px;">(單一號數填左側即可)</span>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="adv-label">裁判期間</td>
+                    <td>
+                        民國 
+                        <input type="number" id="startYear" class="input-mini" placeholder="114"> 年
+                        <input type="number" id="startMonth" class="input-mini" min="1" max="12" placeholder="1"> 月
+                        <input type="number" id="startDay" class="input-mini" min="1" max="31" placeholder="1"> 日
+                        至
+                        <input type="number" id="endYear" class="input-mini" placeholder="115"> 年
+                        <input type="number" id="endMonth" class="input-mini" min="1" max="12" placeholder="12"> 月
+                        <input type="number" id="endDay" class="input-mini" min="1" max="31" placeholder="31"> 日
+                    </td>
+                </tr>
+                <tr>
+                    <td class="adv-label">裁判案由</td>
+                    <td>
+                        <input type="text" id="advTitle" class="input-medium" placeholder="多關鍵字以空格分開，如：過失 傷害">
+                    </td>
+                </tr>
+                <tr>
+                    <td class="adv-label">裁判主文</td>
+                    <td>
+                        <input type="text" id="advMainText" class="input-wide" placeholder="多關鍵字以空格分開，如：有期徒刑 易科罰金 緩刑">
+                    </td>
+                </tr>
+                <tr>
+                    <td class="adv-label">全文內容</td>
+                    <td>
+                        <input type="text" id="advContent" class="input-wide" placeholder="多關鍵字以空格分開，如：洗錢 帳戶 自白">
+                    </td>
+                </tr>
+                <tr>
+                    <td class="adv-label">裁判大小</td>
+                    <td>
+                        <input type="number" id="advSizeMin" class="input-mini" placeholder="0"> KB ～ 
+                        <input type="number" id="advSizeMax" class="input-mini" placeholder="500"> KB
+                    </td>
+                </tr>
+            </table>
+        </div>
     </div>
 
-    <!-- 🤖 全局 AI 問答區塊 -->
+    <!-- 全局 AI 問答區塊 -->
     <div class="search-box" style="background: #e3f2fd; border: 1px solid #90caf9;">
         <h4 style="margin-top: 0; color: #1565c0;">🤖 針對目前列表上的案件提問</h4>
         <input type="text" id="globalAiQuestion" placeholder="例如：這些詐欺案的被告大多被判幾個月？" style="width: 75%;">
@@ -72,20 +172,19 @@
             <h3 id="sideTitle" style="color: #0000cc; margin-top: 0;"></h3>
             <div id="sideMeta" style="color: #666; font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 10px;"></div>
             
-            <!-- 爬蟲抓取狀態與結果 -->
             <div id="historyLoading" class="history-loading">
                 ⏳ 正在啟動背景爬蟲，即時抓取歷審紀錄，請稍候約 5-10 秒...
             </div>
             <div id="sideHistory" class="history-box" style="display: none;"></div>
 
-            <!-- 判決書全文 -->
             <div id="sideBody" style="white-space: pre-wrap; font-size: 1.05em; line-height: 1.8; color: #222; margin-top: 15px;"></div>
         </div>
     </div>
 
     <script>
         let judgmentsData = [];
-        let currentFilteredData = []; // 用來儲存目前畫面上顯示的案件陣列，供 AI 使用
+        let currentFilteredData = [];
+        let currentSearchKeywords = [];
 
         const courtMapping = {
             "TPD": "臺灣臺北地方法院", "SLD": "臺灣士林地方法院", "PCD": "臺灣新北地方法院",
@@ -116,33 +215,344 @@
             return `${year}.${dateStr.substring(4, 6)}.${dateStr.substring(6, 8)}`;
         }
 
+        function showSearchError(msg) {
+            const errBox = document.getElementById('searchErrorMessage');
+            errBox.textContent = `⚠️ ${msg}`;
+            errBox.style.display = 'block';
+        }
+
+        function clearSearchError() {
+            const errBox = document.getElementById('searchErrorMessage');
+            errBox.textContent = '';
+            errBox.style.display = 'none';
+        }
+
+        function toggleAdvancedSearch() {
+            const panel = document.getElementById('advancedPanel');
+            const toggleText = document.getElementById('toggleText');
+            if (panel.style.display === 'none') {
+                panel.style.display = 'block';
+                toggleText.textContent = '收起進階搜尋';
+            } else {
+                panel.style.display = 'none';
+                toggleText.textContent = '展開進階搜尋';
+            }
+        }
+
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        // 解析多關鍵字輸入（支援半形與全形空格分割）
+        function parseKeywords(inputStr) {
+            if (!inputStr) return [];
+            return inputStr.trim().split(/[\s ]+/).filter(k => k.length > 0);
+        }
+
+        // 智慧截取包含關鍵字的上下文並加上高亮
+        function generateHighlightedSnippet(text, keywords, maxLength = 110) {
+            if (!text || text.trim() === "") return "";
+            
+            let firstMatchIndex = -1;
+            for (const kw of keywords) {
+                if (!kw) continue;
+                const idx = text.indexOf(kw);
+                if (idx !== -1 && (firstMatchIndex === -1 || idx < firstMatchIndex)) {
+                    firstMatchIndex = idx;
+                }
+            }
+
+            let snippet = "";
+            if (firstMatchIndex !== -1) {
+                const start = Math.max(0, firstMatchIndex - 25);
+                const end = Math.min(text.length, start + maxLength);
+                snippet = text.substring(start, end);
+                if (start > 0) snippet = "..." + snippet;
+                if (end < text.length) snippet = snippet + "...";
+            } else {
+                snippet = text.length > maxLength ? text.substring(0, maxLength) + "..." : text;
+            }
+
+            for (const kw of keywords) {
+                if (!kw) continue;
+                const safeKw = escapeRegExp(kw);
+                const regex = new RegExp(`(${safeKw})`, 'gi');
+                snippet = snippet.replace(regex, `<span class="highlight-kw">$1</span>`);
+            }
+
+            return snippet;
+        }
+
+        function resetSearch() {
+            clearSearchError();
+            currentSearchKeywords = [];
+
+            document.getElementById('courtInput').value = "";
+            document.getElementById('quickKeywordInput').value = "";
+            document.querySelectorAll('input[name="caseCategory"]').forEach(cb => cb.checked = false);
+            
+            document.getElementById('advYear').value = "";
+            document.getElementById('advCaseType').value = "";
+            document.getElementById('advNoStart').value = "";
+            document.getElementById('advNoEnd').value = "";
+            
+            document.getElementById('startYear').value = "";
+            document.getElementById('startMonth').value = "";
+            document.getElementById('startDay').value = "";
+            document.getElementById('endYear').value = "";
+            document.getElementById('endMonth').value = "";
+            document.getElementById('endDay').value = "";
+
+            document.getElementById('advTitle').value = "";
+            document.getElementById('advMainText').value = "";
+            document.getElementById('advContent').value = "";
+            document.getElementById('advSizeMin').value = "";
+            document.getElementById('advSizeMax').value = "";
+
+            currentFilteredData = judgmentsData;
+            displayResults(currentFilteredData);
+            document.getElementById('sidePanel').style.display = "none";
+            document.getElementById('globalAiAnswer').style.display = "none";
+        }
+
+        function parseRocToDateInt(y, m, d, isEndDate = false) {
+            if (!y) return null;
+            const rocY = parseInt(y, 10);
+            if (isNaN(rocY) || rocY < 1 || rocY > 200) {
+                throw new Error("民國年份格式不正確（例如請填寫 114 或 115）");
+            }
+            
+            let month = m ? parseInt(m, 10) : (isEndDate ? 12 : 1);
+            let day = d ? parseInt(d, 10) : (isEndDate ? 31 : 1);
+
+            if (isNaN(month) || month < 1 || month > 12) {
+                throw new Error("月份格式錯誤，請填寫 1 至 12 之間的數值");
+            }
+            if (isNaN(day) || day < 1 || day > 31) {
+                throw new Error("日期格式錯誤，請填寫 1 至 31 之間的數值");
+            }
+
+            const fullYear = rocY + 1911;
+            const fullMonth = String(month).padStart(2, '0');
+            const fullDay = String(day).padStart(2, '0');
+            return parseInt(`${fullYear}${fullMonth}${fullDay}`, 10);
+        }
+
         fetch('cleaned_judgments2.json')
             .then(response => response.json())
             .then(data => {
-                judgmentsData = data;
-                currentFilteredData = data; // 初始化
-                displayResults(data);
+                const validData = data.filter(item => item && item.id && item.id.trim() !== "");
+                judgmentsData = validData;
+                currentFilteredData = validData;
+                displayResults(validData);
             })
-            .catch(error => document.getElementById('results').innerHTML = `<p style="color:red;">❌ 無法讀取資料。</p>`);
+            .catch(error => {
+                document.getElementById('results').innerHTML = `<p style="color:red;">❌ 無法讀取 cleaned_judgments2.json 資料，請確認檔案路徑。</p>`;
+            });
 
         function searchJudgments() {
-            const court = document.getElementById('courtInput').value;
-            const caseNo = document.getElementById('caseNoInput').value.trim();
-            const title = document.getElementById('titleInput').value.trim();
-            const keyword = document.getElementById('contentInput').value.trim();
+            clearSearchError();
 
+            if (!judgmentsData || judgmentsData.length === 0) {
+                showSearchError("目前尚未載入任何裁判書資料，無法進行比對。");
+                return;
+            }
+
+            const court = document.getElementById('courtInput').value;
+            const checkedCategories = Array.from(document.querySelectorAll('input[name="caseCategory"]:checked')).map(cb => cb.value);
+
+            const advYear = document.getElementById('advYear').value.trim();
+            const advCaseType = document.getElementById('advCaseType').value.trim();
+            const advNoStart = document.getElementById('advNoStart').value.trim();
+            const advNoEnd = document.getElementById('advNoEnd').value.trim();
+
+            // 多關鍵字清單解析 (支援空格切分)
+            const quickKeywords = parseKeywords(document.getElementById('quickKeywordInput').value);
+            const titleKeywords = parseKeywords(document.getElementById('advTitle').value);
+            const mainTextKeywords = parseKeywords(document.getElementById('advMainText').value);
+            const contentKeywords = parseKeywords(document.getElementById('advContent').value);
+
+            // 匯總所有搜尋字詞供高亮模組使用
+            currentSearchKeywords = [];
+            [...quickKeywords, ...titleKeywords, ...mainTextKeywords, ...contentKeywords].forEach(kw => {
+                if (kw && !currentSearchKeywords.includes(kw)) {
+                    currentSearchKeywords.push(kw);
+                }
+            });
+
+            // 1. 驗證號數起迄
+            let noStart = null;
+            let noEnd = null;
+            if (advNoStart !== "") {
+                noStart = parseInt(advNoStart, 10);
+                if (isNaN(noStart)) {
+                    showSearchError("裁判號數【起】請填寫純數字");
+                    return;
+                }
+            }
+            if (advNoEnd !== "") {
+                noEnd = parseInt(advNoEnd, 10);
+                if (isNaN(noEnd)) {
+                    showSearchError("裁判號數【迄】請填寫純數字");
+                    return;
+                }
+            }
+            if (noStart !== null && noEnd !== null && noStart > noEnd) {
+                showSearchError("裁判號數範圍無效：起始號數不能大於結束號數。");
+                return;
+            }
+
+            // 2. 驗證裁判期間
+            let startDateInt = null;
+            let endDateInt = null;
+            try {
+                const sY = document.getElementById('startYear').value.trim();
+                const sM = document.getElementById('startMonth').value.trim();
+                const sD = document.getElementById('startDay').value.trim();
+                const eY = document.getElementById('endYear').value.trim();
+                const eM = document.getElementById('endMonth').value.trim();
+                const eD = document.getElementById('endDay').value.trim();
+
+                if (sY || sM || sD) startDateInt = parseRocToDateInt(sY, sM, sD, false);
+                if (eY || eM || eD) endDateInt = parseRocToDateInt(eY, eM, eD, true);
+
+                if (startDateInt && endDateInt && startDateInt > endDateInt) {
+                    showSearchError("裁判期間錯誤：起始日期不得晚於結束日期。");
+                    return;
+                }
+            } catch (err) {
+                showSearchError(err.message);
+                return;
+            }
+
+            // 3. 驗證裁判大小
+            const sizeMinVal = document.getElementById('advSizeMin').value.trim();
+            const sizeMaxVal = document.getElementById('advSizeMax').value.trim();
+            const sizeMin = sizeMinVal !== "" ? parseFloat(sizeMinVal) : NaN;
+            const sizeMax = sizeMaxVal !== "" ? parseFloat(sizeMaxVal) : NaN;
+
+            if (!isNaN(sizeMin) && !isNaN(sizeMax) && sizeMin > sizeMax) {
+                showSearchError("裁判大小範圍錯誤：最小容量 (KB) 不能大於最大容量 (KB)。");
+                return;
+            }
+
+            // 4. 執行多條件比對篩選
             currentFilteredData = judgmentsData.filter(item => {
                 const idParts = item.id ? item.id.split(',') : [];
-                const searchCaseNo = item.case_no || idParts[3] || "";
-                
-                return (court === "" || (item.id && item.id.includes(court))) &&
-                       (caseNo === "" || searchCaseNo.includes(caseNo)) &&
-                       (title === "" || (item.title && item.title.includes(title))) &&
-                       (keyword === "" || (item.content && item.content.includes(keyword)));
+                const itemCourtCode = idParts[0] || ""; 
+                const itemYear = (item.year && item.year.trim()) || idParts[1] || "";
+                const itemCaseType = (item.case_type && item.case_type.trim()) || idParts[2] || "";
+                const itemCaseNo = (item.case_no && item.case_no.trim()) || idParts[3] || "";
+                const itemContent = item.content || "";
+                const itemMainText = item.main_text || "";
+                const itemTitle = item.title || "";
+                const itemDateInt = item.date ? parseInt(item.date, 10) : null;
+
+                // 法院過濾
+                if (court !== "" && !(item.id && item.id.includes(court))) return false;
+
+                // 快速檢索 (多關鍵字 AND 邏輯：每個詞彙皆須命中 id、案號、案由、主文或全文其中之一)
+                if (quickKeywords.length > 0) {
+                    const passQuick = quickKeywords.every(kw => {
+                        return (item.id && item.id.includes(kw)) ||
+                               itemCaseNo.includes(kw) ||
+                               itemTitle.includes(kw) ||
+                               itemContent.includes(kw) ||
+                               itemMainText.includes(kw);
+                    });
+                    if (!passQuick) return false;
+                }
+
+                // 案件類別判定
+                if (checkedCategories.length > 0) {
+                    const courtTypeChar = itemCourtCode.length >= 4 ? itemCourtCode.charAt(3) : "";
+                    const firstLine = itemContent.split('\n')[0] || "";
+
+                    const isMatchedCategory = checkedCategories.some(cat => {
+                        if (cat === "刑事") {
+                            return courtTypeChar === "M" || 
+                                   firstLine.includes("刑事") || 
+                                   ["訴", "簡", "易", "金重訴", "交易", "交簡"].includes(itemCaseType);
+                        }
+                        if (cat === "民事") {
+                            return courtTypeChar === "V" || 
+                                   courtTypeChar === "E" || 
+                                   firstLine.includes("民事") || 
+                                   firstLine.includes("支付命令") ||
+                                   ["司促", "司拍", "執事聲", "宜訴", "羅簡", "苗小", "苗簡"].includes(itemCaseType);
+                        }
+                        if (cat === "行政") {
+                            return courtTypeChar === "A" || firstLine.includes("行政");
+                        }
+                        if (cat === "憲法") {
+                            return firstLine.includes("憲法");
+                        }
+                        if (cat === "懲戒") {
+                            return firstLine.includes("懲戒");
+                        }
+                        return false;
+                    });
+
+                    if (!isMatchedCategory) return false;
+                }
+
+                // 裁判年度
+                if (advYear !== "" && itemYear !== advYear) return false;
+
+                // 裁判字別 (模糊比對)
+                if (advCaseType !== "" && !itemCaseType.includes(advCaseType)) return false;
+
+                // 號數區間
+                if (noStart !== null) {
+                    const currentNo = parseInt(itemCaseNo, 10);
+                    if (isNaN(currentNo)) {
+                        if (!itemCaseNo.includes(String(noStart))) return false;
+                    } else {
+                        if (noEnd !== null) {
+                            if (currentNo < noStart || currentNo > noEnd) return false;
+                        } else {
+                            if (currentNo !== noStart) return false;
+                        }
+                    }
+                }
+
+                // 裁判期間
+                if (itemDateInt) {
+                    if (startDateInt && itemDateInt < startDateInt) return false;
+                    if (endDateInt && itemDateInt > endDateInt) return false;
+                }
+
+                // 案由 (多關鍵字 AND 邏輯)
+                if (titleKeywords.length > 0) {
+                    const passTitle = titleKeywords.every(kw => itemTitle.includes(kw));
+                    if (!passTitle) return false;
+                }
+
+                // 主文 (多關鍵字 AND 邏輯：在 main_text 或 content 中比對)
+                if (mainTextKeywords.length > 0) {
+                    const passMain = mainTextKeywords.every(kw => {
+                        return (itemMainText && itemMainText.includes(kw)) || itemContent.includes(kw);
+                    });
+                    if (!passMain) return false;
+                }
+
+                // 全文內容 (多關鍵字 AND 邏輯)
+                if (contentKeywords.length > 0) {
+                    const passContent = contentKeywords.every(kw => itemContent.includes(kw));
+                    if (!passContent) return false;
+                }
+
+                // 大小 (KB)
+                if (!isNaN(sizeMin) || !isNaN(sizeMax)) {
+                    const sizeKB = (itemContent.length * 2) / 1024;
+                    if (!isNaN(sizeMin) && sizeKB < sizeMin) return false;
+                    if (!isNaN(sizeMax) && sizeKB > sizeMax) return false;
+                }
+
+                return true;
             });
+
             displayResults(currentFilteredData);
-            
-            // 重新搜尋時隱藏右側面板與 AI 回答
             document.getElementById('sidePanel').style.display = "none"; 
             document.getElementById('globalAiAnswer').style.display = "none";
             document.getElementById('globalAiQuestion').value = "";
@@ -150,9 +560,23 @@
 
         function displayResults(data) {
             const resultsDiv = document.getElementById('results');
-            if (data.length === 0) return resultsDiv.innerHTML = `<p>找不到符合條件的裁判書。</p>`;
+            
+            if (data.length === 0) {
+                resultsDiv.innerHTML = `
+                    <div style="background: #fff3e0; border: 1px solid #ffe0b2; padding: 25px; border-radius: 6px; text-align: center; margin-top: 10px;">
+                        <h4 style="color: #e65100; margin-top: 0;">🔍 查無符合條件的裁判書</h4>
+                        <p style="color: #6d4c41; margin-bottom: 8px;">可能原因如下：</p>
+                        <ul style="display: inline-block; text-align: left; color: #5d4037; font-size: 0.92em; line-height: 1.8;">
+                            <li>輸入的多個關鍵字無法在同一筆案件中同時滿足 (AND 關係)</li>
+                            <li>指定的法院或年度查無此字號或號數</li>
+                            <li>勾選的【案件類別】排除了此案別</li>
+                            <li>可點擊上方「<strong>重設</strong>」按鈕清空條件重新搜尋</li>
+                        </ul>
+                    </div>`;
+                return;
+            }
 
-            let html = `<p style="text-align: right; color: #555; font-size: 0.9em; margin: 0 0 10px 0;">共 ${data.length} 筆</p>`;
+            let html = `<p style="text-align: right; color: #555; font-size: 0.9em; margin: 0 0 10px 0;">共 ${data.length} 筆符合條件</p>`;
             html += `<table class="result-table">
                         <thead>
                             <tr>
@@ -165,7 +589,6 @@
                         <tbody>`;
             
             data.forEach((item, index) => {
-                // 💡 案號防呆機制：若 JSON 中的欄位為空，自動從 id 解析補位
                 const idParts = item.id ? item.id.split(',') : [];
                 const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
                 const displayType = (item.case_type && item.case_type.trim() !== "") ? item.case_type : (idParts[2] || "");
@@ -173,16 +596,21 @@
 
                 const courtName = getCourtName(item.id);
                 const fullTitle = `${courtName} ${displayYear} 年度 ${displayType} 字第 ${displayNo} 號裁判`;
+                
+                const contentText = item.content || "";
+                const sizeKB = ((contentText.length * 2) / 1024).toFixed(1);
+                const titleWithSize = `${fullTitle} <span style="color: #777; font-size: 0.85em; font-weight: normal;">(${sizeKB} KB)</span>`;
+
                 const rocDate = formatROCDate(item.date);
                 
-                // 💡 主文與內文降級顯示機制
+                // 套用多關鍵字上下文截取與醒目標示
                 let displaySnippet = "";
                 if (item.main_text && item.main_text.trim() !== "") {
-                    const truncatedMain = item.main_text.length > 100 ? item.main_text.substring(0, 100) + '...' : item.main_text;
-                    displaySnippet = `<span class="main-text-tag">【主文】</span> ${truncatedMain}`; 
+                    const highlightedMain = generateHighlightedSnippet(item.main_text, currentSearchKeywords, 110);
+                    displaySnippet = `<span class="main-text-tag">【主文】</span> ${highlightedMain}`; 
                 } else if (item.content && item.content.trim() !== "") {
-                    const previewContent = item.content.length > 100 ? item.content.substring(0, 100) + '...' : item.content;
-                    displaySnippet = `<span class="summary-tag">【摘要】</span> ${previewContent}`;
+                    const highlightedContent = generateHighlightedSnippet(item.content, currentSearchKeywords, 110);
+                    displaySnippet = `<span class="summary-tag">【摘要】</span> ${highlightedContent}`;
                 } else {
                     displaySnippet = "<span style='color: #999;'>(此案件無內容)</span>";
                 }
@@ -191,29 +619,32 @@
                     <tr>
                         <td>${index + 1}.</td>
                         <td>
-                            <a class="result-title-link" onclick="showFullContent('${item.id}')">${fullTitle}</a>
+                            <a class="result-title-link" onclick="showFullContent('${item.id}')">${titleWithSize}</a>
                             <span class="snippet">${displaySnippet}</span>
                         </td>
                         <td>${rocDate}</td>
                         <td>${item.title || "無案由"}</td>
                     </tr>`;
             });
-            resultsDiv.innerHTML = html + `</tbody></table>`;
+            html += `</tbody></table>`;
+            resultsDiv.innerHTML = html;
         }
 
         function showFullContent(id) {
             const item = judgmentsData.find(j => j.id === id);
             if (!item) return;
 
-            // 確保詳情區的案號也是使用防呆機制組裝的
             const idParts = item.id ? item.id.split(',') : [];
             const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
             const displayType = (item.case_type && item.case_type.trim() !== "") ? item.case_type : (idParts[2] || "");
             const displayNo = (item.case_no && item.case_no.trim() !== "") ? item.case_no : (idParts[3] || "");
             const fullTitle = `${getCourtName(item.id)} ${displayYear} 年度 ${displayType} 字第 ${displayNo} 號裁判`;
 
-            document.getElementById('sideTitle').textContent = fullTitle;
-            document.getElementById('sideMeta').innerHTML = `<strong>日期：</strong>${formatROCDate(item.date)} &nbsp;|&nbsp; <strong>案由：</strong>${item.title || "無"}`;
+            const contentText = item.content || "";
+            const sizeKB = ((contentText.length * 2) / 1024).toFixed(1);
+
+            document.getElementById('sideTitle').innerHTML = `${fullTitle} <span style="color: #777; font-size: 0.75em; font-weight: normal;">(${sizeKB} KB)</span>`;
+            document.getElementById('sideMeta').innerHTML = `<strong>日期：</strong>${formatROCDate(item.date)} &nbsp;|&nbsp; <strong>案由：</strong>${item.title || "無"} &nbsp;|&nbsp; <strong>大小：</strong>${sizeKB} KB`;
             document.getElementById('sideBody').textContent = item.content;
             document.getElementById('sidePanel').style.display = "block";
 
@@ -222,7 +653,6 @@
             historyBox.style.display = "none";
             loadingBox.style.display = "block";
 
-            // 呼叫歷審爬蟲 API
             fetch('http://localhost:8000/api/get_history', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -249,7 +679,6 @@
             });
         }
 
-        // 🤖 呼叫 AI API 的函式
         function askGlobalAI() {
             const question = document.getElementById('globalAiQuestion').value.trim();
             const answerBox = document.getElementById('globalAiAnswer');
@@ -272,7 +701,6 @@
 
             answerBox.style.display = "block";
             
-            // 擷取要送給 AI 的內容 (同樣套用防呆案號)
             const contentsToSent = currentFilteredData.slice(0, maxCasesToAnalyze).map(item => {
                 const idParts = item.id ? item.id.split(',') : [];
                 const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
@@ -281,7 +709,6 @@
                 return `【${displayYear}年度${displayType}字第${displayNo}號】\n${item.content}`;
             });
 
-            // 呼叫 FastAPI 後端
             fetch('http://localhost:8000/api/ask_multiple', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
