@@ -31,7 +31,7 @@
             border-radius: 3px; 
         }
 
-        /* 仿司法院進階搜尋表格 */
+        /* 司法院風格進階搜尋表格 */
         .advanced-panel { margin-top: 15px; border-top: 1px dashed #b5c7ad; padding-top: 15px; }
         .adv-table { width: 100%; border-collapse: collapse; background: #fbfdfa; border: 1px solid #c9d8c3; font-size: 0.92em; }
         .adv-table td { padding: 8px 12px; border-bottom: 1px solid #dce7d7; vertical-align: middle; }
@@ -52,10 +52,28 @@
             position: sticky; top: 20px; max-height: 80vh; overflow-y: auto; 
         }
 
+        /* 表格上方控制列（筆數與排序） */
+        .table-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 0 0 10px 0;
+            font-size: 0.9em;
+            color: #555;
+        }
+        .sort-select {
+            padding: 4px 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 0.95em;
+            background: #fff;
+            color: #333;
+        }
+
         /* 表格與內文樣式 */
         .result-table { width: 100%; border-collapse: collapse; font-size: 0.95em; }
         .result-table th, .result-table td { border-bottom: 1px solid #ddd; padding: 12px; text-align: left; vertical-align: top; }
-        .result-table th { background-color: #4a7766; color: white; font-weight: normal; position: sticky; top: 0; } 
+        .result-table th { background-color: #4a7766; color: white; font-weight: normal; position: sticky; top: 0; z-index: 10; } 
         .result-title-link { color: #0000cc; text-decoration: none; cursor: pointer; font-weight: bold; font-size: 1.05em; }
         .result-title-link:hover { text-decoration: underline; color: #cc0000; }
         .snippet { color: #555; font-size: 0.9em; margin-top: 8px; display: block; line-height: 1.5; }
@@ -67,6 +85,131 @@
         .history-box ul { margin: 5px 0 0 0; padding-left: 20px; }
         .history-box li { margin-bottom: 5px; }
         .history-loading { color: #d84315; font-weight: bold; margin: 15px 0; display: none; }
+
+        /* 🤖 聊天機器人專用樣式 */
+        .chat-card {
+            background: #ffffff;
+            border: 1px solid #90caf9;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(21, 101, 192, 0.08);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .chat-header {
+            background: linear-gradient(135deg, #1976d2, #1565c0);
+            color: #ffffff;
+            padding: 12px 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chat-header h4 { margin: 0; font-size: 1.05em; display: flex; align-items: center; gap: 8px; }
+        .chat-clear-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
+        }
+        .chat-clear-btn:hover { background: rgba(255, 255, 255, 0.35); }
+        .chat-messages {
+            height: 280px;
+            overflow-y: auto;
+            padding: 16px;
+            background: #f8fafc;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .chat-bubble-row { display: flex; align-items: flex-start; gap: 10px; width: 100%; }
+        .chat-bubble-row.user { justify-content: flex-end; }
+        .chat-bubble-row.bot { justify-content: flex-start; }
+        
+        .chat-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9em;
+            flex-shrink: 0;
+        }
+        .bot-avatar { background: #e3f2fd; color: #1565c0; border: 1px solid #bbdefb; }
+        .user-avatar { background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
+
+        .chat-bubble {
+            max-width: 78%;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 0.92em;
+            line-height: 1.6;
+            word-break: break-word;
+        }
+        .user-bubble {
+            background-color: #1976d2;
+            color: #ffffff;
+            border-bottom-right-radius: 2px;
+        }
+        .bot-bubble {
+            background-color: #ffffff;
+            color: #2c3e50;
+            border: 1px solid #e2e8f0;
+            border-bottom-left-radius: 2px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+        }
+        .chat-input-area {
+            display: flex;
+            gap: 8px;
+            padding: 12px 16px;
+            background: #ffffff;
+            border-top: 1px solid #e2e8f0;
+        }
+        .chat-input-area input {
+            flex: 1;
+            padding: 9px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 0.95em;
+            outline: none;
+        }
+        .chat-input-area input:focus { border-color: #1976d2; }
+        .chat-send-btn {
+            padding: 0 18px;
+            background: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .chat-send-btn:hover { background: #1565c0; }
+        .chat-send-btn:disabled { background: #90caf9; cursor: not-allowed; }
+        
+        .chat-typing {
+            display: inline-flex;
+            gap: 4px;
+            align-items: center;
+            padding: 4px 6px;
+        }
+        .chat-typing span {
+            width: 6px;
+            height: 6px;
+            background: #90caf9;
+            border-radius: 50%;
+            animation: bounce 1.2s infinite ease-in-out;
+        }
+        .chat-typing span:nth-child(2) { animation-delay: 0.2s; }
+        .chat-typing span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-5px); }
+        }
     </style>
 </head>
 <body>
@@ -76,7 +219,7 @@
     <!-- 搜尋條件區塊 -->
     <div class="search-box">
         <div class="basic-search-row">
-            <select id="courtInput" style="width: 200px;"><option value="">全部法院</option></select>
+            <select id="courtInput" style="width: 280px;"><option value="">全部法院</option></select>
             <input type="text" id="quickKeywordInput" placeholder="全文或案號快速檢索 (多個關鍵字以空格分開)..." style="flex: 1; min-width: 220px;">
             <button class="btn-primary" onclick="searchJudgments()">🔍 開始搜尋</button>
             <button class="btn-toggle" type="button" onclick="toggleAdvancedSearch()">⚙️ <span id="toggleText">展開進階搜尋</span></button>
@@ -98,6 +241,14 @@
                         <label><input type="checkbox" name="caseCategory" value="行政"> 行政</label>&nbsp;&nbsp;
                         <label><input type="checkbox" name="caseCategory" value="懲戒"> 懲戒</label>
                         <span class="hint-text">(未勾選預設為全選)</span>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="adv-label">裁判書類別</td>
+                    <td>
+                        <label><input type="radio" name="docType" value="" checked> 全部</label>&nbsp;&nbsp;
+                        <label><input type="radio" name="docType" value="判決"> 判決</label>&nbsp;&nbsp;
+                        <label><input type="radio" name="docType" value="裁定"> 裁定</label>
                     </td>
                 </tr>
                 <tr>
@@ -152,12 +303,25 @@
         </div>
     </div>
 
-    <!-- 全局 AI 問答區塊 -->
-    <div class="search-box" style="background: #e3f2fd; border: 1px solid #90caf9;">
-        <h4 style="margin-top: 0; color: #1565c0;">🤖 針對目前列表上的案件提問</h4>
-        <input type="text" id="globalAiQuestion" placeholder="例如：這些詐欺案的被告大多被判幾個月？" style="width: 75%;">
-        <button onclick="askGlobalAI()" style="background: #1976d2; width: auto;">向 AI 發問</button>
-        <div id="globalAiAnswer" style="background: #fff; padding: 15px; margin-top: 15px; border-radius: 5px; display: none; line-height: 1.8;"></div>
+    <!-- 🤖 裁判書 AI 智慧分析對話助手 -->
+    <div class="chat-card">
+        <div class="chat-header">
+            <h4>🤖 裁判書 AI 智慧分析助理</h4>
+            <button class="chat-clear-btn" type="button" onclick="clearChatMessages()">清空對話</button>
+        </div>
+        <div id="chatMessages" class="chat-messages">
+            <div class="chat-bubble-row bot">
+                <div class="chat-avatar bot-avatar">AI</div>
+                <div class="chat-bubble bot-bubble">
+                    你好！我是裁判書分析助理。你可以針對目前搜尋列表中的案件提出任何法律或統計問題（例如：「這些詐欺案件的被告大多判刑多久？」或「請幫我整理這些交通事故的主文責任比例」）。
+                </div>
+            </div>
+        </div>
+        <div class="chat-input-area">
+            <input type="text" id="chatInput" placeholder="請輸入對當前搜尋案件的提問...">            <button id="chatSendBtn" class="chat-send-btn" onclick="sendChatMessage()">
+                發送
+            </button>
+        </div>
     </div>
 
     <!-- 左右分欄內容區 -->
@@ -186,13 +350,26 @@
         let currentFilteredData = [];
         let currentSearchKeywords = [];
 
+        // 全台法院、高分院、高等行政法院、簡易庭完整中文對照表
         const courtMapping = {
+            "TPS": "最高法院", "TPA": "最高行政法院", "TPC": "懲戒法院", "CPC": "司法院憲法法庭",
+            "TPH": "臺灣高等法院", "TCH": "臺灣高等法院臺中分院", "TNH": "臺灣高等法院臺南分院",
+            "KSH": "臺灣高等法院高雄分院", "HLH": "臺灣高等法院花蓮分院", "KMH": "福建高等法院金門分院",
+            "TPB": "臺北高等行政法院", "TCB": "臺中高等行政法院", "KSB": "高雄高等行政法院",
             "TPD": "臺灣臺北地方法院", "SLD": "臺灣士林地方法院", "PCD": "臺灣新北地方法院",
             "TYD": "臺灣桃園地方法院", "SCD": "臺灣新竹地方法院", "MLD": "臺灣苗栗地方法院",
             "TCD": "臺灣臺中地方法院", "CHD": "臺灣彰化地方法院", "NTD": "臺灣南投地方法院",
             "YLD": "臺灣雲林地方法院", "CYD": "臺灣嘉義地方法院", "TND": "臺灣臺南地方法院",
             "KSD": "臺灣高雄地方法院", "PTD": "臺灣屏東地方法院", "TTD": "臺灣臺東地方法院",
-            "HLD": "臺灣花蓮地方法院", "ILD": "臺灣宜蘭地方法院", "KLD": "臺灣基隆地方法院"
+            "HLD": "臺灣花蓮地方法院", "ILD": "臺灣宜蘭地方法院", "KLD": "臺灣基隆地方法院",
+            "PHD": "臺灣澎湖地方法院", "KMD": "福建金門地方法院", "LCD": "福建連江地方法院",
+            "CLE": "臺灣桃園地方法院中壢簡易庭", "TYE": "臺灣桃園地方法院桃園簡易庭",
+            "PCE": "臺灣新北地方法院板橋簡易庭", "STE": "臺灣新北地方法院三重簡易庭",
+            "TPE": "臺灣臺北地方法院臺北簡易庭", "SLE": "臺灣士林地方法院士林簡易庭",
+            "NIE": "臺灣士林地方法院內湖簡易庭", "ILE": "臺灣宜蘭地方法院宜蘭簡易庭",
+            "LTE": "臺灣宜蘭地方法院羅東簡易庭", "KSE": "臺灣高雄地方法院高雄簡易庭",
+            "FSE": "臺灣高雄地方法院鳳山簡易庭", "KSY": "臺灣高雄少年及家事法院", 
+            "IPC": "智慧財產及商業法院"
         };
 
         const courtSelect = document.getElementById('courtInput');
@@ -203,10 +380,37 @@
             courtSelect.appendChild(option);
         }
 
-        function getCourtName(id) {
-            if (!id) return "未知法院";
-            const code = id.split(',')[0].substring(0, 3); 
-            return courtMapping[code] || code;
+        function getCourtName(item) {
+            if (!item) return "未知法院";
+
+            const content = item.content || "";
+            const firstLine = content.split('\n')[0] || "";
+            const matchCourt = firstLine.match(/([^\s]+(?:法院|法庭))/);
+            if (matchCourt && matchCourt[1]) {
+                return matchCourt[1].trim();
+            }
+
+            const id = item.id || "";
+            const firstSegment = id.split(',')[0] || "";
+            const prefix3 = firstSegment.substring(0, 3);
+            
+            if (courtMapping[prefix3]) return courtMapping[prefix3];
+            if (courtMapping[firstSegment]) return courtMapping[firstSegment];
+
+            return prefix3 || "未知法院";
+        }
+
+        function getDocumentKind(item) {
+            const content = item.content || "";
+            const firstLine = content.split('\n')[0] || "";
+            
+            if (firstLine.includes("裁定") || content.includes("裁定如下") || firstLine.includes("支付命令")) {
+                return "裁定";
+            }
+            if (firstLine.includes("判決") || content.includes("判決如下")) {
+                return "判決";
+            }
+            return "裁判";
         }
 
         function formatROCDate(dateStr) {
@@ -243,13 +447,11 @@
             return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         }
 
-        // 解析多關鍵字輸入（支援半形與全形空格分割）
         function parseKeywords(inputStr) {
             if (!inputStr) return [];
             return inputStr.trim().split(/[\s ]+/).filter(k => k.length > 0);
         }
 
-        // 智慧截取包含關鍵字的上下文並加上高亮
         function generateHighlightedSnippet(text, keywords, maxLength = 110) {
             if (!text || text.trim() === "") return "";
             
@@ -283,6 +485,44 @@
             return snippet;
         }
 
+        function applySorting(data, sortType) {
+            const sorted = [...data];
+            sorted.sort((a, b) => {
+                const dateA = parseInt(a.date, 10) || 0;
+                const dateB = parseInt(b.date, 10) || 0;
+
+                const idPartsA = a.id ? a.id.split(',') : [];
+                const idPartsB = b.id ? b.id.split(',') : [];
+                const noA = parseInt((a.case_no && a.case_no.trim()) || idPartsA[3] || 0, 10);
+                const noB = parseInt((b.case_no && b.case_no.trim()) || idPartsB[3] || 0, 10);
+
+                const sizeA = (a.content || "").length;
+                const sizeB = (b.content || "").length;
+
+                switch (sortType) {
+                    case "date_asc":
+                        return dateA - dateB;
+                    case "no_desc":
+                        return noB - noA;
+                    case "no_asc":
+                        return noA - noB;
+                    case "size_desc":
+                        return sizeB - sizeA;
+                    case "size_asc":
+                        return sizeA - sizeB;
+                    case "date_desc":
+                    default:
+                        return dateB - dateA;
+                }
+            });
+            return sorted;
+        }
+
+        function handleSortChange(sortType) {
+            currentFilteredData = applySorting(currentFilteredData, sortType);
+            renderTableBody(currentFilteredData);
+        }
+
         function resetSearch() {
             clearSearchError();
             currentSearchKeywords = [];
@@ -290,6 +530,7 @@
             document.getElementById('courtInput').value = "";
             document.getElementById('quickKeywordInput').value = "";
             document.querySelectorAll('input[name="caseCategory"]').forEach(cb => cb.checked = false);
+            document.querySelector('input[name="docType"][value=""]').checked = true;
             
             document.getElementById('advYear').value = "";
             document.getElementById('advCaseType').value = "";
@@ -309,10 +550,11 @@
             document.getElementById('advSizeMin').value = "";
             document.getElementById('advSizeMax').value = "";
 
-            currentFilteredData = judgmentsData;
+            const sortSelect = document.getElementById('tableSortSelect');
+            const sortType = sortSelect ? sortSelect.value : "date_desc";
+            currentFilteredData = applySorting(judgmentsData, sortType);
             displayResults(currentFilteredData);
             document.getElementById('sidePanel').style.display = "none";
-            document.getElementById('globalAiAnswer').style.display = "none";
         }
 
         function parseRocToDateInt(y, m, d, isEndDate = false) {
@@ -343,8 +585,8 @@
             .then(data => {
                 const validData = data.filter(item => item && item.id && item.id.trim() !== "");
                 judgmentsData = validData;
-                currentFilteredData = validData;
-                displayResults(validData);
+                currentFilteredData = applySorting(validData, "date_desc");
+                displayResults(currentFilteredData);
             })
             .catch(error => {
                 document.getElementById('results').innerHTML = `<p style="color:red;">❌ 無法讀取 cleaned_judgments2.json 資料，請確認檔案路徑。</p>`;
@@ -360,19 +602,18 @@
 
             const court = document.getElementById('courtInput').value;
             const checkedCategories = Array.from(document.querySelectorAll('input[name="caseCategory"]:checked')).map(cb => cb.value);
+            const selectedDocType = document.querySelector('input[name="docType"]:checked')?.value || "";
 
             const advYear = document.getElementById('advYear').value.trim();
             const advCaseType = document.getElementById('advCaseType').value.trim();
             const advNoStart = document.getElementById('advNoStart').value.trim();
             const advNoEnd = document.getElementById('advNoEnd').value.trim();
 
-            // 多關鍵字清單解析 (支援空格切分)
             const quickKeywords = parseKeywords(document.getElementById('quickKeywordInput').value);
             const titleKeywords = parseKeywords(document.getElementById('advTitle').value);
             const mainTextKeywords = parseKeywords(document.getElementById('advMainText').value);
             const contentKeywords = parseKeywords(document.getElementById('advContent').value);
 
-            // 匯總所有搜尋字詞供高亮模組使用
             currentSearchKeywords = [];
             [...quickKeywords, ...titleKeywords, ...mainTextKeywords, ...contentKeywords].forEach(kw => {
                 if (kw && !currentSearchKeywords.includes(kw)) {
@@ -380,7 +621,6 @@
                 }
             });
 
-            // 1. 驗證號數起迄
             let noStart = null;
             let noEnd = null;
             if (advNoStart !== "") {
@@ -402,7 +642,6 @@
                 return;
             }
 
-            // 2. 驗證裁判期間
             let startDateInt = null;
             let endDateInt = null;
             try {
@@ -425,7 +664,6 @@
                 return;
             }
 
-            // 3. 驗證裁判大小
             const sizeMinVal = document.getElementById('advSizeMin').value.trim();
             const sizeMaxVal = document.getElementById('advSizeMax').value.trim();
             const sizeMin = sizeMinVal !== "" ? parseFloat(sizeMinVal) : NaN;
@@ -436,8 +674,7 @@
                 return;
             }
 
-            // 4. 執行多條件比對篩選
-            currentFilteredData = judgmentsData.filter(item => {
+            let filtered = judgmentsData.filter(item => {
                 const idParts = item.id ? item.id.split(',') : [];
                 const itemCourtCode = idParts[0] || ""; 
                 const itemYear = (item.year && item.year.trim()) || idParts[1] || "";
@@ -448,10 +685,13 @@
                 const itemTitle = item.title || "";
                 const itemDateInt = item.date ? parseInt(item.date, 10) : null;
 
-                // 法院過濾
                 if (court !== "" && !(item.id && item.id.includes(court))) return false;
 
-                // 快速檢索 (多關鍵字 AND 邏輯：每個詞彙皆須命中 id、案號、案由、主文或全文其中之一)
+                if (selectedDocType !== "") {
+                    const kind = getDocumentKind(item);
+                    if (kind !== selectedDocType) return false;
+                }
+
                 if (quickKeywords.length > 0) {
                     const passQuick = quickKeywords.every(kw => {
                         return (item.id && item.id.includes(kw)) ||
@@ -463,7 +703,6 @@
                     if (!passQuick) return false;
                 }
 
-                // 案件類別判定
                 if (checkedCategories.length > 0) {
                     const courtTypeChar = itemCourtCode.length >= 4 ? itemCourtCode.charAt(3) : "";
                     const firstLine = itemContent.split('\n')[0] || "";
@@ -479,7 +718,7 @@
                                    courtTypeChar === "E" || 
                                    firstLine.includes("民事") || 
                                    firstLine.includes("支付命令") ||
-                                   ["司促", "司拍", "執事聲", "宜訴", "羅簡", "苗小", "苗簡"].includes(itemCaseType);
+                                   ["司促", "司拍", "執事聲", "宜訴", "羅簡", "苗小", "苗簡", "壢小", "壢保險簡", "壢司他"].includes(itemCaseType);
                         }
                         if (cat === "行政") {
                             return courtTypeChar === "A" || firstLine.includes("行政");
@@ -496,13 +735,9 @@
                     if (!isMatchedCategory) return false;
                 }
 
-                // 裁判年度
                 if (advYear !== "" && itemYear !== advYear) return false;
-
-                // 裁判字別 (模糊比對)
                 if (advCaseType !== "" && !itemCaseType.includes(advCaseType)) return false;
 
-                // 號數區間
                 if (noStart !== null) {
                     const currentNo = parseInt(itemCaseNo, 10);
                     if (isNaN(currentNo)) {
@@ -516,19 +751,16 @@
                     }
                 }
 
-                // 裁判期間
                 if (itemDateInt) {
                     if (startDateInt && itemDateInt < startDateInt) return false;
                     if (endDateInt && itemDateInt > endDateInt) return false;
                 }
 
-                // 案由 (多關鍵字 AND 邏輯)
                 if (titleKeywords.length > 0) {
                     const passTitle = titleKeywords.every(kw => itemTitle.includes(kw));
                     if (!passTitle) return false;
                 }
 
-                // 主文 (多關鍵字 AND 邏輯：在 main_text 或 content 中比對)
                 if (mainTextKeywords.length > 0) {
                     const passMain = mainTextKeywords.every(kw => {
                         return (itemMainText && itemMainText.includes(kw)) || itemContent.includes(kw);
@@ -536,13 +768,11 @@
                     if (!passMain) return false;
                 }
 
-                // 全文內容 (多關鍵字 AND 邏輯)
                 if (contentKeywords.length > 0) {
                     const passContent = contentKeywords.every(kw => itemContent.includes(kw));
                     if (!passContent) return false;
                 }
 
-                // 大小 (KB)
                 if (!isNaN(sizeMin) || !isNaN(sizeMax)) {
                     const sizeKB = (itemContent.length * 2) / 1024;
                     if (!isNaN(sizeMin) && sizeKB < sizeMin) return false;
@@ -552,10 +782,58 @@
                 return true;
             });
 
+            const sortSelect = document.getElementById('tableSortSelect');
+            const sortType = sortSelect ? sortSelect.value : "date_desc";
+            currentFilteredData = applySorting(filtered, sortType);
+
             displayResults(currentFilteredData);
             document.getElementById('sidePanel').style.display = "none"; 
-            document.getElementById('globalAiAnswer').style.display = "none";
-            document.getElementById('globalAiQuestion').value = "";
+        }
+
+        function renderTableBody(data) {
+            const tbody = document.getElementById('resultTableBody');
+            if (!tbody) return;
+
+            let bodyHtml = "";
+            data.forEach((item, index) => {
+                const idParts = item.id ? item.id.split(',') : [];
+                const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
+                const displayType = (item.case_type && item.case_type.trim() !== "") ? item.case_type : (idParts[2] || "");
+                const displayNo = (item.case_no && item.case_no.trim() !== "") ? item.case_no : (idParts[3] || "");
+
+                const courtName = getCourtName(item);
+                const docKind = getDocumentKind(item);
+                const fullTitle = `${courtName} ${displayYear} 年度 ${displayType} 字第 ${displayNo} 號${docKind}`;
+                
+                const contentText = item.content || "";
+                const sizeKB = ((contentText.length * 2) / 1024).toFixed(1);
+                const titleWithSize = `${fullTitle} <span style="color: #777; font-size: 0.85em; font-weight: normal;">(${sizeKB} KB)</span>`;
+
+                const rocDate = formatROCDate(item.date);
+                
+                let displaySnippet = "";
+                if (item.main_text && item.main_text.trim() !== "") {
+                    const highlightedMain = generateHighlightedSnippet(item.main_text, currentSearchKeywords, 110);
+                    displaySnippet = `<span class="main-text-tag">【主文】</span> ${highlightedMain}`; 
+                } else if (item.content && item.content.trim() !== "") {
+                    const highlightedContent = generateHighlightedSnippet(item.content, currentSearchKeywords, 110);
+                    displaySnippet = `<span class="summary-tag">【摘要】</span> ${highlightedContent}`;
+                } else {
+                    displaySnippet = "<span style='color: #999;'>(此案件無內容)</span>";
+                }
+
+                bodyHtml += `
+                    <tr>
+                        <td>${index + 1}.</td>
+                        <td>
+                            <a class="result-title-link" onclick="showFullContent('${item.id}')">${titleWithSize}</a>
+                            <span class="snippet">${displaySnippet}</span>
+                        </td>
+                        <td>${rocDate}</td>
+                        <td>${item.title || "無案由"}</td>
+                    </tr>`;
+            });
+            tbody.innerHTML = bodyHtml;
         }
 
         function displayResults(data) {
@@ -568,15 +846,32 @@
                         <p style="color: #6d4c41; margin-bottom: 8px;">可能原因如下：</p>
                         <ul style="display: inline-block; text-align: left; color: #5d4037; font-size: 0.92em; line-height: 1.8;">
                             <li>輸入的多個關鍵字無法在同一筆案件中同時滿足 (AND 關係)</li>
+                            <li>指定的書類別 (判決/裁定) 與勾選的案件類別衝突</li>
                             <li>指定的法院或年度查無此字號或號數</li>
-                            <li>勾選的【案件類別】排除了此案別</li>
                             <li>可點擊上方「<strong>重設</strong>」按鈕清空條件重新搜尋</li>
                         </ul>
                     </div>`;
                 return;
             }
 
-            let html = `<p style="text-align: right; color: #555; font-size: 0.9em; margin: 0 0 10px 0;">共 ${data.length} 筆符合條件</p>`;
+            const currentSortVal = document.getElementById('tableSortSelect')?.value || "date_desc";
+
+            let html = `
+                <div class="table-toolbar">
+                    <span>共 <strong>${data.length}</strong> 筆符合條件</span>
+                    <div>
+                        <label for="tableSortSelect">排序方式：</label>
+                        <select id="tableSortSelect" class="sort-select" onchange="handleSortChange(this.value)">
+                            <option value="date_desc" ${currentSortVal === 'date_desc' ? 'selected' : ''}>裁判日期 (新到舊)</option>
+                            <option value="date_asc" ${currentSortVal === 'date_asc' ? 'selected' : ''}>裁判日期 (舊到新)</option>
+                            <option value="no_desc" ${currentSortVal === 'no_desc' ? 'selected' : ''}>裁判案號 (大到小)</option>
+                            <option value="no_asc" ${currentSortVal === 'no_asc' ? 'selected' : ''}>裁判案號 (小到大)</option>
+                            <option value="size_desc" ${currentSortVal === 'size_desc' ? 'selected' : ''}>全文大小 (大到小)</option>
+                            <option value="size_asc" ${currentSortVal === 'size_asc' ? 'selected' : ''}>全文大小 (小到大)</option>
+                        </select>
+                    </div>
+                </div>`;
+
             html += `<table class="result-table">
                         <thead>
                             <tr>
@@ -586,48 +881,11 @@
                                 <th width="15%">案由</th>
                             </tr>
                         </thead>
-                        <tbody>`;
+                        <tbody id="resultTableBody"></tbody>
+                     </table>`;
             
-            data.forEach((item, index) => {
-                const idParts = item.id ? item.id.split(',') : [];
-                const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
-                const displayType = (item.case_type && item.case_type.trim() !== "") ? item.case_type : (idParts[2] || "");
-                const displayNo = (item.case_no && item.case_no.trim() !== "") ? item.case_no : (idParts[3] || "");
-
-                const courtName = getCourtName(item.id);
-                const fullTitle = `${courtName} ${displayYear} 年度 ${displayType} 字第 ${displayNo} 號裁判`;
-                
-                const contentText = item.content || "";
-                const sizeKB = ((contentText.length * 2) / 1024).toFixed(1);
-                const titleWithSize = `${fullTitle} <span style="color: #777; font-size: 0.85em; font-weight: normal;">(${sizeKB} KB)</span>`;
-
-                const rocDate = formatROCDate(item.date);
-                
-                // 套用多關鍵字上下文截取與醒目標示
-                let displaySnippet = "";
-                if (item.main_text && item.main_text.trim() !== "") {
-                    const highlightedMain = generateHighlightedSnippet(item.main_text, currentSearchKeywords, 110);
-                    displaySnippet = `<span class="main-text-tag">【主文】</span> ${highlightedMain}`; 
-                } else if (item.content && item.content.trim() !== "") {
-                    const highlightedContent = generateHighlightedSnippet(item.content, currentSearchKeywords, 110);
-                    displaySnippet = `<span class="summary-tag">【摘要】</span> ${highlightedContent}`;
-                } else {
-                    displaySnippet = "<span style='color: #999;'>(此案件無內容)</span>";
-                }
-
-                html += `
-                    <tr>
-                        <td>${index + 1}.</td>
-                        <td>
-                            <a class="result-title-link" onclick="showFullContent('${item.id}')">${titleWithSize}</a>
-                            <span class="snippet">${displaySnippet}</span>
-                        </td>
-                        <td>${rocDate}</td>
-                        <td>${item.title || "無案由"}</td>
-                    </tr>`;
-            });
-            html += `</tbody></table>`;
             resultsDiv.innerHTML = html;
+            renderTableBody(data);
         }
 
         function showFullContent(id) {
@@ -638,7 +896,9 @@
             const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
             const displayType = (item.case_type && item.case_type.trim() !== "") ? item.case_type : (idParts[2] || "");
             const displayNo = (item.case_no && item.case_no.trim() !== "") ? item.case_no : (idParts[3] || "");
-            const fullTitle = `${getCourtName(item.id)} ${displayYear} 年度 ${displayType} 字第 ${displayNo} 號裁判`;
+            const courtName = getCourtName(item);
+            const docKind = getDocumentKind(item);
+            const fullTitle = `${courtName} ${displayYear} 年度 ${displayType} 字第 ${displayNo} 號${docKind}`;
 
             const contentText = item.content || "";
             const sizeKB = ((contentText.length * 2) / 1024).toFixed(1);
@@ -679,28 +939,87 @@
             });
         }
 
-        function askGlobalAI() {
-            const question = document.getElementById('globalAiQuestion').value.trim();
-            const answerBox = document.getElementById('globalAiAnswer');
-            
+        // 🤖 聊天機器人相關功能函式
+        function handleChatKeyDown(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                sendChatMessage();
+            }
+        }
+
+        function clearChatMessages() {
+            const chatMessages = document.getElementById('chatMessages');
+            const chatInput = document.getElementById('chatInput');
+            const sendBtn = document.getElementById('chatSendBtn');
+
+            // 1. 還原預設歡迎訊息
+            chatMessages.innerHTML = `
+                <div class="chat-bubble-row bot">
+                    <div class="chat-avatar bot-avatar">AI</div>
+                    <div class="chat-bubble bot-bubble">
+                        對話記錄已清空。您可以繼續針對目前列表上的案件進行提問。
+                    </div>
+                </div>`;
+
+            // 2. 💡 強制解除禁用狀態並恢復輸入框功能
+            if (chatInput) {
+                chatInput.disabled = false;
+                chatInput.value = '';
+                chatInput.focus();
+            }
+            if (sendBtn) {
+                sendBtn.disabled = false;
+            }
+        }
+
+        function appendChatMessage(sender, contentHtml) {
+            const chatMessages = document.getElementById('chatMessages');
+            const row = document.createElement('div');
+            row.className = `chat-bubble-row ${sender}`;
+
+            if (sender === 'user') {
+                row.innerHTML = `
+                    <div class="chat-bubble user-bubble">${contentHtml}</div>
+                    <div class="chat-avatar user-avatar">我</div>`;
+            } else {
+                row.innerHTML = `
+                    <div class="chat-avatar bot-avatar">AI</div>
+                    <div class="chat-bubble bot-bubble">${contentHtml}</div>`;
+            }
+
+            chatMessages.appendChild(row);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            return row;
+        }
+
+        function sendChatMessage() {
+            const input = document.getElementById('chatInput');
+            const question = input.value.trim();
+            const sendBtn = document.getElementById('chatSendBtn');
+
             if (!question) return;
-            if (currentFilteredData.length === 0) {
-                alert("目前畫面上沒有任何案件可以讓 AI 閱讀喔！請先調整搜尋條件。");
+
+            if (!currentFilteredData || currentFilteredData.length === 0) {
+                alert("目前畫面上沒有任何案件可以讓 AI 閱讀喔！請先確認搜尋條件。");
                 return;
             }
 
-            const maxCasesToAnalyze = 50;
-            let analyzeCount = currentFilteredData.length;
-            
-            if (analyzeCount > maxCasesToAnalyze) {
-                analyzeCount = maxCasesToAnalyze;
-                answerBox.innerHTML = `<em>🤖 案件數量較多，避免系統超載，AI 將僅針對最前面的 <strong>${analyzeCount}</strong> 筆案件進行深度分析，請稍候...</em>`;
-            } else {
-                answerBox.innerHTML = `<em>🤖 AI 正在交叉比對這 <strong>${analyzeCount}</strong> 筆案件，請稍候...</em>`;
-            }
+            // 1. 在聊天室中加入使用者的提問泡泡
+            appendChatMessage('user', escapeHtml(question));
+            input.value = '';
+            input.disabled = true;
+            sendBtn.disabled = true;
 
-            answerBox.style.display = "block";
-            
+            // 2. 加入帶有打字動畫的暫時回覆泡泡
+            const loadingRow = appendChatMessage('bot', `
+                <div class="chat-typing">
+                    <span></span><span></span><span></span>
+                </div>
+                <span style="color:#64748b; font-size:0.88em; margin-left:4px;">AI 正在研讀搜尋結果並統整分析中...</span>
+            `);
+
+            // 3. 限制傳送上限為 50 筆
+            const maxCasesToAnalyze = 70;
             const contentsToSent = currentFilteredData.slice(0, maxCasesToAnalyze).map(item => {
                 const idParts = item.id ? item.id.split(',') : [];
                 const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
@@ -709,6 +1028,7 @@
                 return `【${displayYear}年度${displayType}字第${displayNo}號】\n${item.content}`;
             });
 
+            // 4. 發送請求至後端
             fetch('http://localhost:8000/api/ask_multiple', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -719,13 +1039,41 @@
             })
             .then(res => res.json())
             .then(data => {
-                const formattedAnswer = data.answer.replace(/\n/g, '<br>');
-                answerBox.innerHTML = `<strong style="color:#1565c0;">AI 分析結果：</strong><br><br>${formattedAnswer}`;
+                const botBubble = loadingRow.querySelector('.chat-bubble');
+                const formattedAnswer = (data.answer || "（無回傳分析內容）").replace(/\n/g, '<br>');
+                botBubble.innerHTML = formattedAnswer;
             })
             .catch(err => {
                 console.error(err);
-                answerBox.innerHTML = `<span style="color:red;">連線失敗，請確認 FastAPI 後端伺服器是否啟動。</span>`;
+                const botBubble = loadingRow.querySelector('.chat-bubble');
+                botBubble.innerHTML = `<span style="color:#d32f2f;">連線失敗：請確認 FastAPI 後端伺服器 (http://localhost:8000) 是否已正常啟動。</span>`;
+            })
+            .finally(() => {
+                const input = document.getElementById('chatInput');
+                const sendBtn = document.getElementById('chatSendBtn');
+                if (input) {
+                    input.disabled = false;
+                    input.focus();
+                }
+                if (sendBtn) {
+                    sendBtn.disabled = false;
+                }
+                const chatMessages = document.getElementById('chatMessages');
+                if (chatMessages) {
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                }
             });
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
         }
     </script>
 </body>
