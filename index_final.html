@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>裁判書搜尋與歷審查詢系統</title>
+    <style>
+        body { font-family: "微軟正黑體", Arial, sans-serif; max-width: 1200px; margin: 20px auto; line-height: 1.6; color: #333; }
+        
+        /* 搜尋與 AI 條件區塊 */
+        .search-box { background: #eef2eb; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #d0dcae; }
+        .search-box input, .search-box select { padding: 8px; margin: 5px; width: calc(25% - 15px); box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        .search-box button { padding: 8px 20px; background: #4a7766; color: white; border: none; cursor: pointer; border-radius: 4px; margin-left: 5px; font-weight: bold; }
+        .search-box button:hover { background: #365b4d; }
+
+        /* 左右分欄排版 */
+        .main-container { display: flex; gap: 20px; align-items: flex-start; }
+        .list-panel { flex: 1; overflow-y: auto; max-height: 80vh; }
+        .detail-panel { 
+            flex: 1; background: #fdfdfd; border: 1px solid #ddd; border-radius: 8px; 
+            padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); display: none; 
+            position: sticky; top: 20px; max-height: 80vh; overflow-y: auto; 
+        }
+
+        /* 表格與內文樣式 */
+        .result-table { width: 100%; border-collapse: collapse; font-size: 0.95em; }
+        .result-table th, .result-table td { border-bottom: 1px solid #ddd; padding: 12px; text-align: left; vertical-align: top; }
+        .result-table th { background-color: #4a7766; color: white; font-weight: normal; position: sticky; top: 0; } 
+        .result-title-link { color: #0000cc; text-decoration: none; cursor: pointer; font-weight: bold; font-size: 1.05em; }
+        .result-title-link:hover { text-decoration: underline; color: #cc0000; }
+        .snippet { color: #555; font-size: 0.9em; margin-top: 8px; display: block; line-height: 1.5; }
+        
+        /* 歷審紀錄區塊 */
+        .history-box { background: #fff8e1; border-left: 4px solid #ffc107; padding: 15px; margin: 15px 0; font-size: 0.95em; }
+        .history-box ul { margin: 5px 0 0 0; padding-left: 20px; }
+        .history-box li { margin-bottom: 5px; }
+        .history-loading { color: #d84315; font-weight: bold; margin: 15px 0; display: none; }
+    </style>
+</head>
+<body>
+
+    <h2>⚖️ 裁判書搜尋與歷審查詢系統</h2>
+
+    <!-- 搜尋條件區 -->
+    <div class="search-box">
+        <select id="courtInput"><option value="">全部法院</option></select>
+        <input type="text" id="caseNoInput" placeholder="裁判案號 (如: 820)">
+        <input type="text" id="titleInput" placeholder="案由 (如: 毒品)">
+        <input type="text" id="contentInput" placeholder="全文檢索">
+        <button onclick="searchJudgments()">搜尋</button>
+    </div>
+
+    <!-- 🤖 全局 AI 問答區塊 -->
+    <div class="search-box" style="background: #e3f2fd; border: 1px solid #90caf9;">
+        <h4 style="margin-top: 0; color: #1565c0;">🤖 針對目前列表上的案件提問</h4>
+        <input type="text" id="globalAiQuestion" placeholder="例如：這些詐欺案的被告大多被判幾個月？" style="width: 75%;">
+        <button onclick="askGlobalAI()" style="background: #1976d2; width: auto;">向 AI 發問</button>
+        <div id="globalAiAnswer" style="background: #fff; padding: 15px; margin-top: 15px; border-radius: 5px; display: none; line-height: 1.8;"></div>
+    </div>
+
+    <!-- 左右分欄內容區 -->
+    <div class="main-container">
+        <!-- 左側：搜尋結果列表 -->
+        <div id="results" class="list-panel">
+            <p>資料載入中，請稍候...</p>
+        </div>
+
+        <!-- 右側：判決書詳情與歷審紀錄 -->
+        <div id="sidePanel" class="detail-panel">
+            <h3 id="sideTitle" style="color: #0000cc; margin-top: 0;"></h3>
+            <div id="sideMeta" style="color: #666; font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 10px;"></div>
+            
+            <!-- 爬蟲抓取狀態與結果 -->
+            <div id="historyLoading" class="history-loading">
+                ⏳ 正在啟動背景爬蟲，即時抓取歷審紀錄，請稍候約 5-10 秒...
+            </div>
+            <div id="sideHistory" class="history-box" style="display: none;"></div>
+
+            <!-- 判決書全文 -->
+            <div id="sideBody" style="white-space: pre-wrap; font-size: 1.05em; line-height: 1.8; color: #222; margin-top: 15px;"></div>
+        </div>
+    </div>
+
+    <script>
+        let judgmentsData = [];
+        let currentFilteredData = []; // 用來儲存目前畫面上顯示的案件陣列，供 AI 使用
+
+        const courtMapping = {
+            "TPD": "臺灣臺北地方法院", "SLD": "臺灣士林地方法院", "PCD": "臺灣新北地方法院",
+            "TYD": "臺灣桃園地方法院", "SCD": "臺灣新竹地方法院", "MLD": "臺灣苗栗地方法院",
+            "TCD": "臺灣臺中地方法院", "CHD": "臺灣彰化地方法院", "NTD": "臺灣南投地方法院",
+            "YLD": "臺灣雲林地方法院", "CYD": "臺灣嘉義地方法院", "TND": "臺灣臺南地方法院",
+            "KSD": "臺灣高雄地方法院", "PTD": "臺灣屏東地方法院", "TTD": "臺灣臺東地方法院",
+            "HLD": "臺灣花蓮地方法院", "ILD": "臺灣宜蘭地方法院", "KLD": "臺灣基隆地方法院"
+        };
+
+        const courtSelect = document.getElementById('courtInput');
+        for (const [code, name] of Object.entries(courtMapping)) {
+            const option = document.createElement('option');
+            option.value = code;
+            option.textContent = name;
+            courtSelect.appendChild(option);
+        }
+
+        function getCourtName(id) {
+            const code = id.split(',')[0].substring(0, 3); 
+            return courtMapping[code] || code;
+        }
+
+        function formatROCDate(dateStr) {
+            if (!dateStr || dateStr.length !== 8) return dateStr;
+            const year = parseInt(dateStr.substring(0, 4)) - 1911;
+            return `${year}.${dateStr.substring(4, 6)}.${dateStr.substring(6, 8)}`;
+        }
+
+        fetch('cleaned_judgments2.json')
+            .then(response => response.json())
+            .then(data => {
+                judgmentsData = data;
+                currentFilteredData = data; // 初始化
+                displayResults(data);
+            })
+            .catch(error => document.getElementById('results').innerHTML = `<p style="color:red;">❌ 無法讀取資料。</p>`);
+
+        function searchJudgments() {
+            const court = document.getElementById('courtInput').value;
+            const caseNo = document.getElementById('caseNoInput').value.trim();
+            const title = document.getElementById('titleInput').value.trim();
+            const keyword = document.getElementById('contentInput').value.trim();
+
+            currentFilteredData = judgmentsData.filter(item => {
+                return (court === "" || item.id.includes(court)) &&
+                       (caseNo === "" || item.case_no.includes(caseNo)) &&
+                       (title === "" || item.title.includes(title)) &&
+                       (keyword === "" || item.content.includes(keyword));
+            });
+            displayResults(currentFilteredData);
+            
+            // 重新搜尋時隱藏右側面板與 AI 回答
+            document.getElementById('sidePanel').style.display = "none"; 
+            document.getElementById('globalAiAnswer').style.display = "none";
+            document.getElementById('globalAiQuestion').value = "";
+        }
+
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('results');
+            if (data.length === 0) return resultsDiv.innerHTML = `<p>找不到符合條件的裁判書。</p>`;
+
+            let html = `<p style="text-align: right; color: #555; font-size: 0.9em; margin: 0 0 10px 0;">共 ${data.length} 筆</p>`;
+            html += `<table class="result-table"><thead><tr><th width="70%">裁判字號 (點擊查看)</th><th width="30%">日期</th></tr></thead><tbody>`;
+            
+            data.forEach((item) => {
+                const fullTitle = `${getCourtName(item.id)} ${item.year} 年度 ${item.case_type} 字第 ${item.case_no} 號裁判`;
+                const preview = item.content.length > 50 ? item.content.substring(0, 50) + '...' : item.content;
+                html += `
+                    <tr>
+                        <td>
+                            <a class="result-title-link" onclick="showFullContent('${item.id}')">${fullTitle}</a>
+                            <span class="snippet">${preview}</span>
+                        </td>
+                        <td>${formatROCDate(item.date)}</td>
+                    </tr>`;
+            });
+            resultsDiv.innerHTML = html + `</tbody></table>`;
+        }
+
+        function showFullContent(id) {
+            const item = judgmentsData.find(j => j.id === id);
+            if (!item) return;
+
+            document.getElementById('sideTitle').textContent = `${getCourtName(item.id)} ${item.year} 年度 ${item.case_type} 字第 ${item.case_no} 號裁判`;
+            document.getElementById('sideMeta').innerHTML = `<strong>日期：</strong>${formatROCDate(item.date)} &nbsp;|&nbsp; <strong>案由：</strong>${item.title}`;
+            document.getElementById('sideBody').textContent = item.content;
+            document.getElementById('sidePanel').style.display = "block";
+
+            const historyBox = document.getElementById('sideHistory');
+            const loadingBox = document.getElementById('historyLoading');
+            historyBox.style.display = "none";
+            loadingBox.style.display = "block";
+
+            // 呼叫爬蟲 API
+            fetch('http://localhost:8000/api/get_history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(item)
+            })
+            .then(res => res.json())
+            .then(data => {
+                loadingBox.style.display = "none";
+                if (data.history && data.history.length > 0) {
+                    let hHtml = "<strong>🔗 相關歷審裁判紀錄：</strong><ul>";
+                    data.history.forEach(h => {
+                        hHtml += `<li><a href="${h.url}" target="_blank">${h.title}</a></li>`;
+                    });
+                    historyBox.innerHTML = hHtml + "</ul>";
+                } else {
+                    historyBox.innerHTML = "此案件查無其他歷審紀錄。";
+                }
+                historyBox.style.display = "block";
+            })
+            .catch(err => {
+                loadingBox.style.display = "none";
+                historyBox.innerHTML = "<span style='color:red;'>連線至爬蟲伺服器失敗，請確認後端已啟動。</span>";
+                historyBox.style.display = "block";
+            });
+        }
+
+        // 🤖 呼叫 AI API 的函式
+        function askGlobalAI() {
+            const question = document.getElementById('globalAiQuestion').value.trim();
+            const answerBox = document.getElementById('globalAiAnswer');
+            
+            if (!question) return;
+            if (currentFilteredData.length === 0) {
+                alert("目前畫面上沒有任何案件可以讓 AI 閱讀喔！請先調整搜尋條件。");
+                return;
+            }
+
+            const maxCasesToAnalyze = 50;
+            let analyzeCount = currentFilteredData.length;
+            
+            if (analyzeCount > maxCasesToAnalyze) {
+                analyzeCount = maxCasesToAnalyze;
+                answerBox.innerHTML = `<em>🤖 案件數量較多，避免系統超載，AI 將僅針對最前面的 <strong>${analyzeCount}</strong> 筆案件進行深度分析，請稍候...</em>`;
+            } else {
+                answerBox.innerHTML = `<em>🤖 AI 正在交叉比對這 <strong>${analyzeCount}</strong> 筆案件，請稍候...</em>`;
+            }
+
+            answerBox.style.display = "block";
+            
+            // 擷取要送給 AI 的內容
+            const contentsToSent = currentFilteredData.slice(0, maxCasesToAnalyze).map(item => {
+                return `【${item.year}年度${item.case_type}字第${item.case_no}號】\n${item.content}`;
+            });
+
+            // 呼叫你的後端 AI API
+            fetch('http://localhost:8000/api/ask_multiple', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    judgments_content: contentsToSent,
+                    question: question
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                const formattedAnswer = data.answer.replace(/\n/g, '<br>');
+                answerBox.innerHTML = `<strong style="color:#1565c0;">AI 分析結果：</strong><br><br>${formattedAnswer}`;
+            })
+            .catch(err => {
+                console.error(err);
+                answerBox.innerHTML = `<span style="color:red;">連線失敗，請確認 FastAPI 後端伺服器是否支援 /api/ask_multiple 路徑。</span>`;
+            });
+        }
+    </script>
+</body>
+</html>

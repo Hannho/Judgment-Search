@@ -1,0 +1,152 @@
+import os
+import time
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from dotenv import load_dotenv
+
+# 爬蟲相關套件
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+
+# AI 相關套件
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.prompts import ChatPromptTemplate
+
+# 載入環境變數
+load_dotenv()
+api_key = os.getenv("GOOGLE_API_KEY")
+os.environ["GOOGLE_API_KEY"] = api_key
+
+app = FastAPI()
+
+# 設定 CORS，讓網頁前端可以順利呼叫 API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ==========================================
+# 1. 爬蟲 API 區塊 (/api/get_history)
+# ==========================================
+class JudgmentRequest(BaseModel):
+    id: str
+    year: str
+    case_type: str
+    case_no: str
+    date: str
+
+COURT_MAPPING = {
+    "TPS": "最高法院", "TPA": "最高行政法院", "TPH": "臺灣高等法院", 
+    "TPD": "臺灣臺北地方法院", "SLD": "臺灣士林地方法院", "PCD": "臺灣新北地方法院", 
+    "TYD": "臺灣桃園地方法院", "SCD": "臺灣新竹地方法院", "MLD": "臺灣苗栗地方法院", 
+    "TCD": "臺灣臺中地方法院", "NTD": "臺灣南投地方法院", "CHD": "臺灣彰化地方法院", 
+    "ULD": "臺灣雲林地方法院", "CYD": "臺灣嘉義地方法院", "TND": "臺灣臺南地方法院", 
+    "KSD": "臺灣高雄地方法院", "CTD": "臺灣橋頭地方法院", "PTD": "臺灣屏東地方法院", 
+    "TTD": "臺灣臺東地方法院", "HLD": "臺灣花蓮地方法院", "ILD": "臺灣宜蘭地方法院", 
+    "KLD": "臺灣基隆地方法院"
+}
+
+@app.post("/api/get_history")
+def get_history(req: JudgmentRequest):
+    # 解析法院與日期
+    court_code = req.id.split(",")[0][:3]
+    court_name = COURT_MAPPING.get(court_code, "未知法院")
+    
+    tw_year = str(int(req.date[:4]) - 1911)
+    target_date_str = f"{tw_year}.{req.date[4:6]}.{req.date[6:8]}"
+    
+    # 啟動無頭模式瀏覽器 (不跳出視窗，在背景執行)
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless')
+    options.add_argument('--disable-notifications')
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    wait = WebDriverWait(driver, 10)
+    
+    history_results = []
+    
+    try:
+        driver.get("https://judgment.judicial.gov.tw/FJUD/default.aspx")
+        
+        # 單一搜尋欄位輸入
+        search_query = f"{court_name}{req.year}{req.case_type}{req.case_no}"
+        search_input = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder*='可輸入法院名稱']")))
+        search_input.clear()
+        search_input.send_keys(search_query)
+        search_input.send_keys(Keys.RETURN)
+
+        # 切換 iframe 並精準比對日期
+        wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "iframe-data")))
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table")))
+        
+        xpath_query = f"//tr[td[contains(text(), '{target_date_str}')]]//a"
+        exact_match_link = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_query)))
+        exact_match_link.click()
+            
+        # 抓取歷審紀錄
+        history_links = wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.panel-body ul li a[href*='data.aspx']")))
+        
+        for link in history_links:
+            title = link.text.strip()
+            url = link.get_attribute("href")
+            if not url.startswith("http"):
+                url = "https://judgment.judicial.gov.tw/FJUD/" + url
+            history_results.append({"title": title, "url": url})
+            
+    except Exception as e:
+        print(f"爬蟲發生錯誤: {e}")
+    finally:
+        driver.quit()
+        
+    return {"history": history_results}
+
+
+# ==========================================
+# 2. AI 問答 API 區塊 (/api/ask_multiple)
+# ==========================================
+class MultiQAQuery(BaseModel):
+    judgments_content: list[str]
+    question: str
+
+@app.post("/api/ask_multiple")
+def ask_ai_multiple(query: MultiQAQuery):
+    if not query.judgments_content:
+        return {"answer": "目前沒有任何案件資料可供閱讀。"}
+
+    # 為了確保伺服器回應速度，設定最多一次讓 AI 閱讀前 30 筆篩選結果
+    texts_to_read = query.judgments_content[:30]
+    
+    # 將所有判決書內容合併成一個巨大的字串，中間用分隔線隔開
+    context = "\n\n---\n\n".join(texts_to_read)
+    
+    # 呼叫 Gemini 模型
+    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", temperature=0)
+    
+    prompt_template = ChatPromptTemplate.from_messages([
+        ("system", "你是一位專業的法律助理。請綜合以下提供的 [篩選後裁判書內容] 來回答問題。\n"
+                   "回答時，請務必明確指出是依據哪一個案號的判決。\n"
+                   "如果你不知道答案，請直接說不知道，不要編造資訊。\n\n"
+                   "[篩選後裁判書內容]：\n{context}"),
+        ("human", "{input}")
+    ])
+    
+    # 串接 Prompt 與模型並執行
+    chain = prompt_template | llm
+    
+    try:
+        response = chain.invoke({
+            "context": context,
+            "input": query.question
+        })
+        return {"answer": response.content}
+    except Exception as e:
+        print(f"AI 處理發生錯誤: {e}")
+        return {"answer": "AI 伺服器目前無法處理您的請求，請稍後再試。"}
