@@ -1,0 +1,205 @@
+body { font-family: "微軟正黑體", Arial, sans-serif; max-width: 1250px; margin: 20px auto; line-height: 1.6; color: #333; }
+
+/* 搜尋條件與進階面板 */
+.search-box { background: #eef2eb; padding: 18px 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #d0dcae; }
+.basic-search-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.basic-search-row input, .basic-search-row select { padding: 8px 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+
+.btn-primary { padding: 8px 22px; background: #4a7766; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
+.btn-primary:hover { background: #365b4d; }
+.btn-toggle { padding: 8px 16px; background: #fff; color: #4a7766; border: 1px solid #4a7766; cursor: pointer; border-radius: 4px; font-weight: bold; }
+.btn-toggle:hover { background: #f0f5f2; }
+.btn-reset { padding: 8px 14px; background: #888; color: white; border: none; cursor: pointer; border-radius: 4px; }
+.btn-reset:hover { background: #666; }
+
+/* 錯誤/提示訊息條 */
+.alert-error { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; padding: 10px 15px; border-radius: 4px; margin-top: 12px; display: none; font-size: 0.9em; font-weight: bold; }
+
+/* 關鍵字高亮標記 */
+.highlight-kw { 
+    background-color: #ffe082; 
+    color: #b71c1c; 
+    font-weight: bold; 
+    padding: 1px 3px; 
+    border-radius: 3px; 
+}
+
+/* 司法院風格進階搜尋表格 */
+.advanced-panel { margin-top: 15px; border-top: 1px dashed #b5c7ad; padding-top: 15px; }
+.adv-table { width: 100%; border-collapse: collapse; background: #fbfdfa; border: 1px solid #c9d8c3; font-size: 0.92em; }
+.adv-table td { padding: 8px 12px; border-bottom: 1px solid #dce7d7; vertical-align: middle; }
+.adv-label { width: 110px; background-color: #dbe6d5; font-weight: bold; color: #2e4d3f; text-align: center; border-right: 1px solid #c9d8c3; }
+.adv-table input[type="text"], .adv-table input[type="number"] { padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em; }
+.input-mini { width: 60px; text-align: center; }
+.input-short { width: 100px; text-align: center; }
+.input-medium { width: 260px; }
+.input-wide { width: 85%; }
+.hint-text { color: #d9534f; font-size: 0.85em; margin-left: 8px; }
+
+/* 左右分欄排版 */
+.main-container { display: flex; gap: 20px; align-items: flex-start; }
+.list-panel { flex: 1; overflow-y: auto; max-height: 80vh; }
+.detail-panel { 
+    flex: 1; background: #fdfdfd; border: 1px solid #ddd; border-radius: 8px; 
+    padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); display: none; 
+    position: sticky; top: 20px; max-height: 80vh; overflow-y: auto; 
+}
+
+/* 表格上方控制列（筆數與排序） */
+.table-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 0 0 10px 0;
+    font-size: 0.9em;
+    color: #555;
+}
+.sort-select {
+    padding: 4px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.95em;
+    background: #fff;
+    color: #333;
+}
+
+/* 表格與內文樣式 */
+.result-table { width: 100%; border-collapse: collapse; font-size: 0.95em; }
+.result-table th, .result-table td { border-bottom: 1px solid #ddd; padding: 12px; text-align: left; vertical-align: top; }
+.result-table th { background-color: #4a7766; color: white; font-weight: normal; position: sticky; top: 0; z-index: 10; } 
+.result-title-link { color: #0000cc; text-decoration: none; cursor: pointer; font-weight: bold; font-size: 1.05em; }
+.result-title-link:hover { text-decoration: underline; color: #cc0000; }
+.snippet { color: #555; font-size: 0.9em; margin-top: 8px; display: block; line-height: 1.5; }
+.main-text-tag { color: #d9534f; font-weight: bold; }
+.summary-tag { color: #999; font-weight: bold; }
+
+/* 歷審紀錄區塊 */
+.history-box { background: #fff8e1; border-left: 4px solid #ffc107; padding: 15px; margin: 15px 0; font-size: 0.95em; }
+.history-box ul { margin: 5px 0 0 0; padding-left: 20px; }
+.history-box li { margin-bottom: 5px; }
+.history-loading { color: #d84315; font-weight: bold; margin: 15px 0; display: none; }
+
+/* 🤖 聊天機器人專用樣式 */
+.chat-card {
+    background: #ffffff;
+    border: 1px solid #90caf9;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(21, 101, 192, 0.08);
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+.chat-header {
+    background: linear-gradient(135deg, #1976d2, #1565c0);
+    color: #ffffff;
+    padding: 12px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.chat-header h4 { margin: 0; font-size: 1.05em; display: flex; align-items: center; gap: 8px; }
+.chat-clear-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8em;
+}
+.chat-clear-btn:hover { background: rgba(255, 255, 255, 0.35); }
+.chat-messages {
+    height: 280px;
+    overflow-y: auto;
+    padding: 16px;
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.chat-bubble-row { display: flex; align-items: flex-start; gap: 10px; width: 100%; }
+.chat-bubble-row.user { justify-content: flex-end; }
+.chat-bubble-row.bot { justify-content: flex-start; }
+
+.chat-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9em;
+    flex-shrink: 0;
+}
+.bot-avatar { background: #e3f2fd; color: #1565c0; border: 1px solid #bbdefb; }
+.user-avatar { background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
+
+.chat-bubble {
+    max-width: 78%;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 0.92em;
+    line-height: 1.6;
+    word-break: break-word;
+}
+.user-bubble {
+    background-color: #1976d2;
+    color: #ffffff;
+    border-bottom-right-radius: 2px;
+}
+.bot-bubble {
+    background-color: #ffffff;
+    color: #2c3e50;
+    border: 1px solid #e2e8f0;
+    border-bottom-left-radius: 2px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+.chat-input-area {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #ffffff;
+    border-top: 1px solid #e2e8f0;
+}
+.chat-input-area input {
+    flex: 1;
+    padding: 9px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 0.95em;
+    outline: none;
+}
+.chat-input-area input:focus { border-color: #1976d2; }
+.chat-send-btn {
+    padding: 0 18px;
+    background: #1976d2;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.chat-send-btn:hover { background: #1565c0; }
+.chat-send-btn:disabled { background: #90caf9; cursor: not-allowed; }
+
+.chat-typing {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    padding: 4px 6px;
+}
+.chat-typing span {
+    width: 6px;
+    height: 6px;
+    background: #90caf9;
+    border-radius: 50%;
+    animation: bounce 1.2s infinite ease-in-out;
+}
+.chat-typing span:nth-child(2) { animation-delay: 0.2s; }
+.chat-typing span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce {
+    0%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-5px); }
+}
