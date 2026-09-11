@@ -18,10 +18,14 @@ from webdriver_manager.chrome import ChromeDriverManager
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+
 # 載入環境變數
 load_dotenv()
-api_key = os.getenv("GOOGLE_API_KEY")
-os.environ["GOOGLE_API_KEY"] = api_key
+# api_key = os.getenv("GOOGLE_API_KEY")
+os.environ["GOOGLE_API_KEY"] = 'aAQ.Ab8RN6LUaZ809h1VFpRG6yFyUT5CiLZnLJMGDozkOocx3QWcoA'
 
 app = FastAPI()
 
@@ -77,9 +81,17 @@ def get_history(req: JudgmentRequest):
     
     # 啟動無頭模式瀏覽器 (不跳出視窗，在背景執行)
     options = webdriver.ChromeOptions()
-    options.add_argument('--headless')
+    options.add_argument('--headless=new')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-gpu')
     options.add_argument('--disable-notifications')
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+    # 指定 Dockerfile 內安裝的 Chromium 與 ChromeDriver 路徑
+    options.binary_location = "/usr/bin/chromium"
+    service = Service("/usr/bin/chromedriver")
+
+    driver = webdriver.Chrome(service=service, options=options)
     wait = WebDriverWait(driver, 10)
     
     history_results = []
@@ -161,3 +173,17 @@ def ask_ai_multiple(query: MultiQAQuery):
     except Exception as e:
         print(f"AI 處理發生錯誤: {e}")
         return {"answer": "AI 伺服器目前無法處理您的請求，請稍後再試。"}
+
+@app.get("/")
+def read_index():
+    return FileResponse("index_final.html")
+
+# 如果有需要讓前端 fetch('cleaned_judgments2.json')，也必須允許讀取
+@app.get("/cleaned_judgments2.json")
+def get_data():
+    return FileResponse("cleaned_judgments2.json")
+
+# 掛載 CSS 或其他靜態資源
+@app.get("/style.css")
+def get_css():
+    return FileResponse("style.css")
