@@ -834,7 +834,18 @@
             .then(res => res.json())
             .then(data => {
                 const botBubble = loadingRow.querySelector('.chat-bubble');
-                const formattedAnswer = (data.answer || "（無回傳分析內容）").replace(/\n/g, '<br>');
+                
+                let rawAnswer = "";
+                if (Array.isArray(data.answer)) {
+                    // 如果後端回傳的是陣列，把裡面每個物件的 text 撈出來組合
+                    rawAnswer = data.answer.map(item => item.text || "").join("\n");
+                } else if (typeof data.answer === 'string') {
+                    rawAnswer = data.answer;
+                } else {
+                    rawAnswer = JSON.stringify(data.answer);
+                }
+
+                const formattedAnswer = rawAnswer.replace(/\n/g, '<br>');
                 botBubble.innerHTML = formattedAnswer;
             })
             .catch(err => {
