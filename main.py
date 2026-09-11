@@ -2,6 +2,7 @@ import os
 import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -18,14 +19,11 @@ from webdriver_manager.chrome import ChromeDriverManager
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-
-
 # 載入環境變數
 load_dotenv()
-# api_key = os.getenv("GOOGLE_API_KEY")
-os.environ["GOOGLE_API_KEY"] = 'aAQ.Ab8RN6LUaZ809h1VFpRG6yFyUT5CiLZnLJMGDozkOocx3QWcoA'
+api_key = os.getenv("GOOGLE_API_KEY")
+if api_key:
+    os.environ["GOOGLE_API_KEY"] = api_key
 
 app = FastAPI()
 
@@ -39,6 +37,28 @@ app.add_middleware(
 )
 
 # ==========================================
+# 0. 靜態檔案路由 (讓 Cloud Run 直接提供網頁)
+# ==========================================
+@app.get("/")
+def read_index():
+    if os.path.exists("index_final.html"):
+        return FileResponse("index_final.html")
+    return {"message": "index_final.html not found"}
+
+@app.get("/style.css")
+def get_css():
+    if os.path.exists("style.css"):
+        return FileResponse("style.css")
+    return {"message": "style.css not found"}
+
+@app.get("/cleaned_judgments2.json")
+def get_data():
+    if os.path.exists("cleaned_judgments2.json"):
+        return FileResponse("cleaned_judgments2.json")
+    return {"message": "cleaned_judgments2.json not found"}
+
+
+# ==========================================
 # 1. 爬蟲 API 區塊 (/api/get_history)
 # ==========================================
 class JudgmentRequest(BaseModel):
@@ -49,26 +69,25 @@ class JudgmentRequest(BaseModel):
     date: str
 
 COURT_MAPPING = {
-            "TPS": "最高法院", "TPA": "最高行政法院", "TPC": "懲戒法院", "CPC": "司法院憲法法庭",
-            "TPH": "臺灣高等法院", "TCH": "臺灣高等法院臺中分院", "TNH": "臺灣高等法院臺南分院",
-            "KSH": "臺灣高等法院高雄分院", "HLH": "臺灣高等法院花蓮分院", "KMH": "福建高等法院金門分院",
-            "TPB": "臺北高等行政法院", "TCB": "臺中高等行政法院", "KSB": "高雄高等行政法院",
-            "TPD": "臺灣臺北地方法院", "SLD": "臺灣士林地方法院", "PCD": "臺灣新北地方法院",
-            "TYD": "臺灣桃園地方法院", "SCD": "臺灣新竹地方法院", "MLD": "臺灣苗栗地方法院",
-            "TCD": "臺灣臺中地方法院", "CHD": "臺灣彰化地方法院", "NTD": "臺灣南投地方法院",
-            "YLD": "臺灣雲林地方法院", "CYD": "臺灣嘉義地方法院", "TND": "臺灣臺南地方法院",
-            "KSD": "臺灣高雄地方法院", "PTD": "臺灣屏東地方法院", "TTD": "臺灣臺東地方法院",
-            "HLD": "臺灣花蓮地方法院", "ILD": "臺灣宜蘭地方法院", "KLD": "臺灣基隆地方法院",
-            "PHD": "臺灣澎湖地方法院", "KMD": "福建金門地方法院", "LCD": "福建連江地方法院",
-            "CLE": "臺灣桃園地方法院中壢簡易庭", "TYE": "臺灣桃園地方法院桃園簡易庭",
-            "PCE": "臺灣新北地方法院板橋簡易庭", "STE": "臺灣新北地方法院三重簡易庭",
-            "TPE": "臺灣臺北地方法院臺北簡易庭", "SLE": "臺灣士林地方法院士林簡易庭",
-            "NIE": "臺灣士林地方法院內湖簡易庭", "ILE": "臺灣宜蘭地方法院宜蘭簡易庭",
-            "LTE": "臺灣宜蘭地方法院羅東簡易庭", "KSE": "臺灣高雄地方法院高雄簡易庭",
-            "FSE": "臺灣高雄地方法院鳳山簡易庭", "KSY": "臺灣高雄少年及家事法院", 
-            "IPC": "智慧財產及商業法院"
-};
-
+    "TPS": "最高法院", "TPA": "最高行政法院", "TPC": "懲戒法院", "CPC": "司法院憲法法庭",
+    "TPH": "臺灣高等法院", "TCH": "臺灣高等法院臺中分院", "TNH": "臺灣高等法院臺南分院",
+    "KSH": "臺灣高等法院高雄分院", "HLH": "臺灣高等法院花蓮分院", "KMH": "福建高等法院金門分院",
+    "TPB": "臺北高等行政法院", "TCB": "臺中高等行政法院", "KSB": "高雄高等行政法院",
+    "TPD": "臺灣臺北地方法院", "SLD": "臺灣士林地方法院", "PCD": "臺灣新北地方法院",
+    "TYD": "臺灣桃園地方法院", "SCD": "臺灣新竹地方法院", "MLD": "臺灣苗栗地方法院",
+    "TCD": "臺灣臺中地方法院", "CHD": "臺灣彰化地方法院", "NTD": "臺灣南投地方法院",
+    "YLD": "臺灣雲林地方法院", "CYD": "臺灣嘉義地方法院", "TND": "臺灣臺南地方法院",
+    "KSD": "臺灣高雄地方法院", "PTD": "臺灣屏東地方法院", "TTD": "臺灣臺東地方法院",
+    "HLD": "臺灣花蓮地方法院", "ILD": "臺灣宜蘭地方法院", "KLD": "臺灣基隆地方法院",
+    "PHD": "臺灣澎湖地方法院", "KMD": "福建金門地方法院", "LCD": "福建連江地方法院",
+    "CLE": "臺灣桃園地方法院中壢簡易庭", "TYE": "臺灣桃園地方法院桃園簡易庭",
+    "PCE": "臺灣新北地方法院板橋簡易庭", "STE": "臺灣新北地方法院三重簡易庭",
+    "TPE": "臺灣臺北地方法院臺北簡易庭", "SLE": "臺灣士林地方法院士林簡易庭",
+    "NIE": "臺灣士林地方法院內湖簡易庭", "ILE": "臺灣宜蘭地方法院宜蘭簡易庭",
+    "LTE": "臺灣宜蘭地方法院羅東簡易庭", "KSE": "臺灣高雄地方法院高雄簡易庭",
+    "FSE": "臺灣高雄地方法院鳳山簡易庭", "KSY": "臺灣高雄少年及家事法院", 
+    "IPC": "智慧財產及商業法院"
+}
 
 @app.post("/api/get_history")
 def get_history(req: JudgmentRequest):
@@ -79,18 +98,26 @@ def get_history(req: JudgmentRequest):
     tw_year = str(int(req.date[:4]) - 1911)
     target_date_str = f"{tw_year}.{req.date[4:6]}.{req.date[6:8]}"
     
-    # 啟動無頭模式瀏覽器 (不跳出視窗，在背景執行)
+    # 設置 Chrome 啟動參數（適配 Docker/Linux 無介面環境）
     options = webdriver.ChromeOptions()
     options.add_argument('--headless=new')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-gpu')
     options.add_argument('--disable-notifications')
+    
+    # 自動偵測是否在 Docker/Linux 容器中
+    if os.path.exists("/usr/bin/chromium"):
+        options.binary_location = "/usr/bin/chromium"
+    elif os.path.exists("/usr/bin/chromium-browser"):
+        options.binary_location = "/usr/bin/chromium-browser"
 
-    # 指定 Dockerfile 內安裝的 Chromium 與 ChromeDriver 路徑
-    options.binary_location = "/usr/bin/chromium"
-    service = Service("/usr/bin/chromedriver")
-
+    if os.path.exists("/usr/bin/chromedriver"):
+        service = Service("/usr/bin/chromedriver")
+    else:
+        # 本地本機測試時備用
+        service = Service(ChromeDriverManager().install())
+        
     driver = webdriver.Chrome(service=service, options=options)
     wait = WebDriverWait(driver, 10)
     
@@ -144,14 +171,12 @@ def ask_ai_multiple(query: MultiQAQuery):
     if not query.judgments_content:
         return {"answer": "目前沒有任何案件資料可供閱讀。"}
 
-    # 為了確保伺服器回應速度，設定最多一次讓 AI 閱讀前 30 筆篩選結果
+    # 取前 50 筆篩選結果
     texts_to_read = query.judgments_content[:50]
-    
-    # 將所有判決書內容合併成一個巨大的字串，中間用分隔線隔開
     context = "\n\n---\n\n".join(texts_to_read)
     
     # 呼叫 Gemini 模型
-    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", temperature=0)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
     
     prompt_template = ChatPromptTemplate.from_messages([
         ("system", "你是一位專業的法律助理。請綜合以下提供的 [篩選後裁判書內容] 來回答問題。\n"
@@ -161,7 +186,6 @@ def ask_ai_multiple(query: MultiQAQuery):
         ("human", "{input}")
     ])
     
-    # 串接 Prompt 與模型並執行
     chain = prompt_template | llm
     
     try:
@@ -172,18 +196,4 @@ def ask_ai_multiple(query: MultiQAQuery):
         return {"answer": response.content}
     except Exception as e:
         print(f"AI 處理發生錯誤: {e}")
-        return {"answer": "AI 伺服器目前無法處理您的請求，請稍後再試。"}
-
-@app.get("/")
-def read_index():
-    return FileResponse("index_final.html")
-
-# 如果有需要讓前端 fetch('cleaned_judgments2.json')，也必須允許讀取
-@app.get("/cleaned_judgments2.json")
-def get_data():
-    return FileResponse("cleaned_judgments2.json")
-
-# 掛載 CSS 或其他靜態資源
-@app.get("/style.css")
-def get_css():
-    return FileResponse("style.css")
+        return {"answer": f"AI 伺服器處理失敗，請確認 API Key 是否設定正確。錯誤詳情：{str(e)}"}
