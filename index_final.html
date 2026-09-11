@@ -707,7 +707,7 @@
             historyBox.style.display = "none";
             loadingBox.style.display = "block";
 
-            fetch('http://localhost:8000/api/get_history', {
+            fetch('/api/get_history', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(item)
@@ -823,7 +823,7 @@
             });
 
             // 4. 發送請求至後端
-            fetch('http://localhost:8000/api/ask_multiple', {
+            fetch('/api/ask_multiple', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
