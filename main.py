@@ -1,8 +1,9 @@
 import os
 import time
+import pymysql
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -37,7 +38,25 @@ app.add_middleware(
 )
 
 # ==========================================
-# 0. 靜態檔案路由 (讓 Cloud Run 直接提供網頁)
+# 0. 資料庫連線設定 (Google Cloud SQL)
+# ==========================================
+DB_HOST = os.getenv("DB_HOST", "35.221.215.146")
+DB_USER = os.getenv("DB_USER", "admin1")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "12345678")  # ⚠️ 請替換為您的密碼，亦可寫在 .env
+DB_NAME = os.getenv("DB_NAME", "judgment")
+
+def get_db_connection():
+    return pymysql.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+        charset='utf8mb4',
+        cursorclass=pymysql.cursors.DictCursor
+    )
+
+# ==========================================
+# 1. 靜態檔案與資料庫資料 API
 # ==========================================
 @app.get("/")
 def read_index():
@@ -51,15 +70,23 @@ def get_css():
         return FileResponse("style.css")
     return {"message": "style.css not found"}
 
-@app.get("/cleaned_judgments2.json")
-def get_data():
-    if os.path.exists("cleaned_judgments2.json"):
-        return FileResponse("cleaned_judgments2.json")
-    return {"message": "cleaned_judgments2.json not found"}
-
+# 💡 從 Cloud SQL 資料庫讀取所有裁判書
+@app.get("/api/judgments")
+def get_judgments_from_db():
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            sql = "SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments"
+            cursor.execute(sql)
+            results = cursor.fetchall()
+        conn.close()
+        return results
+    except Exception as e:
+        print(f"❌ 資料庫讀取失敗: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 # ==========================================
-# 1. 爬蟲 API 區塊 (/api/get_history)
+# 2. 爬蟲 API 區塊 (/api/get_history)
 # ==========================================
 class JudgmentRequest(BaseModel):
     id: str
@@ -91,14 +118,12 @@ COURT_MAPPING = {
 
 @app.post("/api/get_history")
 def get_history(req: JudgmentRequest):
-    # 解析法院與日期
     court_code = req.id.split(",")[0][:3]
     court_name = COURT_MAPPING.get(court_code, "未知法院")
     
     tw_year = str(int(req.date[:4]) - 1911)
     target_date_str = f"{tw_year}.{req.date[4:6]}.{req.date[6:8]}"
     
-    # 設置 Chrome 啟動參數（適配 Docker/Linux 無介面環境）
     options = webdriver.ChromeOptions()
     options.add_argument('--headless=new')
     options.add_argument('--no-sandbox')
@@ -106,7 +131,6 @@ def get_history(req: JudgmentRequest):
     options.add_argument('--disable-gpu')
     options.add_argument('--disable-notifications')
     
-    # 自動偵測是否在 Docker/Linux 容器中
     if os.path.exists("/usr/bin/chromium"):
         options.binary_location = "/usr/bin/chromium"
     elif os.path.exists("/usr/bin/chromium-browser"):
@@ -115,25 +139,21 @@ def get_history(req: JudgmentRequest):
     if os.path.exists("/usr/bin/chromedriver"):
         service = Service("/usr/bin/chromedriver")
     else:
-        # 本地本機測試時備用
         service = Service(ChromeDriverManager().install())
         
     driver = webdriver.Chrome(service=service, options=options)
     wait = WebDriverWait(driver, 10)
-    
     history_results = []
     
     try:
         driver.get("https://judgment.judicial.gov.tw/FJUD/default.aspx")
         
-        # 單一搜尋欄位輸入
         search_query = f"{court_name}{req.year}{req.case_type}{req.case_no}"
         search_input = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder*='可輸入法院名稱']")))
         search_input.clear()
         search_input.send_keys(search_query)
         search_input.send_keys(Keys.RETURN)
 
-        # 切換 iframe 並精準比對日期
         wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "iframe-data")))
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table")))
         
@@ -141,9 +161,7 @@ def get_history(req: JudgmentRequest):
         exact_match_link = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_query)))
         exact_match_link.click()
             
-        # 抓取歷審紀錄
         history_links = wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.panel-body ul li a[href*='data.aspx']")))
-        
         for link in history_links:
             title = link.text.strip()
             url = link.get_attribute("href")
@@ -158,9 +176,8 @@ def get_history(req: JudgmentRequest):
         
     return {"history": history_results}
 
-
 # ==========================================
-# 2. AI 問答 API 區塊 (/api/ask_multiple)
+# 3. AI 問答 API 區塊 (/api/ask_multiple)
 # ==========================================
 class MultiQAQuery(BaseModel):
     judgments_content: list[str]
@@ -171,12 +188,10 @@ def ask_ai_multiple(query: MultiQAQuery):
     if not query.judgments_content:
         return {"answer": "目前沒有任何案件資料可供閱讀。"}
 
-    # 取前 50 筆篩選結果
     texts_to_read = query.judgments_content[:50]
     context = "\n\n---\n\n".join(texts_to_read)
     
-    # 呼叫 Gemini 模型
-    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", temperature=0)
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
     
     prompt_template = ChatPromptTemplate.from_messages([
         ("system", "你是一位專業的法律助理。請綜合以下提供的 [篩選後裁判書內容] 來回答問題。\n"
