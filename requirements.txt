@@ -7,3 +7,4 @@ webdriver-manager
 langchain-google-genai
 langchain-core
 requests
+pymysql
