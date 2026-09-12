@@ -93,8 +93,7 @@ def get_judgments_from_db():
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            sql = "SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments"
-            cursor.execute(sql)
+            sql = "SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments LIMIT 10"
             results = cursor.fetchall()
         conn.close()
         return results
