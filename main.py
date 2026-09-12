@@ -96,7 +96,7 @@ def get_judgments_from_db():
         conn = get_db_connection()
         with conn.cursor() as cursor:
             # 確實執行 execute 後再 fetchall
-            sql = "SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments"
+            sql = "SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments ORDER BY date DESC LIMIT 500"
             cursor.execute(sql)
             results = cursor.fetchall()
             
