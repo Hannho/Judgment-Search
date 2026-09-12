@@ -44,7 +44,8 @@ app.add_middleware(
 DB_HOST = os.getenv("DB_HOST", "35.221.215.146")
 DB_USER = os.getenv("DB_USER", "admin1")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "12345678")  # ⚠️ 您的密碼
-DB_NAME = os.getenv("DB_NAME", "judgment")         # ⚠️ 請確認您的資料庫名稱，稍早對話中為 jjudgment
+# 💡 之前截圖顯示您的資料庫名稱可能是 jjudgment (兩個 j)，請依實際情況確認
+DB_NAME = os.getenv("DB_NAME", "jjudgment")         
 
 # 💡 正確的 Cloud SQL 連線名稱 (已修正為 asia-east1)
 INSTANCE_CONNECTION_NAME = os.getenv("INSTANCE_CONNECTION_NAME", "judgmentsearch:asia-east1:judgment-search") 
@@ -87,19 +88,27 @@ def get_css():
         return FileResponse("style.css")
     return {"message": "style.css not found"}
 
-# 💡 從 Cloud SQL 資料庫讀取所有裁判書
+# 💡 從 Cloud SQL 資料庫讀取所有裁判書 (已加入防呆與完整錯誤處理)
 @app.get("/api/judgments")
 def get_judgments_from_db():
+    conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            sql = "SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments LIMIT 10"
+            # 確實執行 execute 後再 fetchall
+            sql = "SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments"
+            cursor.execute(sql)
             results = cursor.fetchall()
-        conn.close()
+            
         return results
     except Exception as e:
-        print(f"❌ 資料庫讀取失敗: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        error_msg = f"❌ 資料庫讀取失敗: {str(e)}"
+        print(error_msg)
+        return JSONResponse(status_code=500, content={"error": error_msg})
+    finally:
+        # 確保無論成功或失敗，最後都會關閉連線釋放資源
+        if conn:
+            conn.close()
 
 # ==========================================
 # 2. 爬蟲 API 區塊 (/api/get_history)
