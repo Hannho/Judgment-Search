@@ -5,6 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>裁判書搜尋與歷審查詢系統</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* 新增：分頁按鈕區塊樣式 */
+        .pagination-controls {
+            text-align: center;
+            margin-top: 15px;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+        }
+        .pagination-controls button {
+            padding: 8px 16px;
+            margin: 0 10px;
+            border: 1px solid #ccc;
+            background: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.95em;
+            transition: background 0.2s;
+        }
+        .pagination-controls button:hover:not(:disabled) {
+            background: #e2e6ea;
+        }
+        .pagination-controls button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+            background: #f1f3f5;
+        }
+    </style>
 </head>
 <body>
 
@@ -142,6 +171,10 @@
         let judgmentsData = [];
         let currentFilteredData = [];
         let currentSearchKeywords = [];
+
+        // 新增：分頁控制變數
+        let currentPage = 1;
+        const itemsPerPage = 10;
 
         // 全台法院、高分院、高等行政法院、簡易庭完整中文對照表
         const courtMapping = {
@@ -313,6 +346,7 @@
 
         function handleSortChange(sortType) {
             currentFilteredData = applySorting(currentFilteredData, sortType);
+            currentPage = 1; // 排序後回到第一頁
             renderTableBody(currentFilteredData);
         }
 
@@ -346,6 +380,7 @@
             const sortSelect = document.getElementById('tableSortSelect');
             const sortType = sortSelect ? sortSelect.value : "date_desc";
             currentFilteredData = applySorting(judgmentsData, sortType);
+            currentPage = 1; // 重設後回到第一頁
             displayResults(currentFilteredData);
             document.getElementById('sidePanel').style.display = "none";
         }
@@ -373,7 +408,7 @@
             return parseInt(`${fullYear}${fullMonth}${fullDay}`, 10);
         }
 
-        // 💡 修改處：直接從後端 API (/api/judgments) 向 Google Cloud SQL 撈取資料
+        // 💡 直接從後端 API (/api/judgments) 向 Google Cloud SQL 撈取資料
         fetch('/api/judgments')
             .then(response => {
                 if (!response.ok) {
@@ -388,6 +423,7 @@
                 const validData = data.filter(item => item && item.id && item.id.trim() !== "");
                 judgmentsData = validData;
                 currentFilteredData = applySorting(validData, "date_desc");
+                currentPage = 1; // 載入資料後設定在第一頁
                 displayResults(currentFilteredData);
             })
             .catch(error => {
@@ -588,17 +624,32 @@
             const sortSelect = document.getElementById('tableSortSelect');
             const sortType = sortSelect ? sortSelect.value : "date_desc";
             currentFilteredData = applySorting(filtered, sortType);
-
+            
+            currentPage = 1; // 搜尋後回到第一頁
             displayResults(currentFilteredData);
             document.getElementById('sidePanel').style.display = "none"; 
         }
 
+        // 新增/修改：分頁與表格渲染邏輯
         function renderTableBody(data) {
             const tbody = document.getElementById('resultTableBody');
             if (!tbody) return;
 
+            const totalItems = data.length;
+            const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+            
+            // 確保頁數在合理範圍內
+            if (currentPage < 1) currentPage = 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+
+            // 計算當前頁數的資料切片
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+            const paginatedData = data.slice(startIndex, endIndex);
+
             let bodyHtml = "";
-            data.forEach((item, index) => {
+            paginatedData.forEach((item, index) => {
+                const absoluteIndex = startIndex + index + 1; // 計算真實序號 (如跨頁會繼續編號 11, 12...)
                 const idParts = item.id ? item.id.split(',') : [];
                 const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
                 const displayType = (item.case_type && item.case_type.trim() !== "") ? item.case_type : (idParts[2] || "");
@@ -627,7 +678,7 @@
 
                 bodyHtml += `
                     <tr>
-                        <td>${index + 1}.</td>
+                        <td>${absoluteIndex}.</td>
                         <td>
                             <a class="result-title-link" onclick="showFullContent('${item.id}')">${titleWithSize}</a>
                             <span class="snippet">${displaySnippet}</span>
@@ -637,6 +688,40 @@
                     </tr>`;
             });
             tbody.innerHTML = bodyHtml;
+
+            // 渲染分頁按鈕 UI
+            renderPaginationUI(totalPages);
+        }
+
+        // 新增：繪製分頁按鈕 UI
+        function renderPaginationUI(totalPages) {
+            let paginationDiv = document.getElementById('paginationControls');
+            // 如果不存在，則建立一個並放在結果列表的最後面
+            if (!paginationDiv) {
+                paginationDiv = document.createElement('div');
+                paginationDiv.id = 'paginationControls';
+                paginationDiv.className = 'pagination-controls';
+                document.getElementById('results').appendChild(paginationDiv);
+            }
+
+            if (currentFilteredData.length === 0) {
+                paginationDiv.innerHTML = "";
+                return;
+            }
+
+            paginationDiv.innerHTML = `
+                <button onclick="changePage(-1)" ${currentPage === 1 ? 'disabled' : ''}>⬅️ 上一頁</button>
+                <span style="margin: 0 15px; font-weight: bold; color: #555;"> 第 ${currentPage} 頁 / 共 ${totalPages} 頁 </span>
+                <button onclick="changePage(1)" ${currentPage === totalPages ? 'disabled' : ''}>下一頁 ➡️</button>
+            `;
+        }
+
+        // 新增：切換頁碼功能
+        function changePage(delta) {
+            currentPage += delta;
+            renderTableBody(currentFilteredData);
+            // 換頁後自動將畫面捲動回表格最上方，方便閱讀
+            document.querySelector('.table-toolbar').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
         function displayResults(data) {
@@ -688,7 +773,7 @@
                      </table>`;
             
             resultsDiv.innerHTML = html;
-            renderTableBody(data);
+            renderTableBody(data); // 渲染表格並自動產生分頁 UI
         }
 
         function showFullContent(id) {
@@ -817,6 +902,7 @@
                 <span style="color:#64748b; font-size:0.88em; margin-left:4px;">AI 正在研讀搜尋結果並統整分析中...</span>
             `);
 
+            // AI 助理最多閱讀前 50 筆資料 (不受畫面上分頁的限制)
             const maxCasesToAnalyze = 50;
             const contentsToSent = currentFilteredData.slice(0, maxCasesToAnalyze).map(item => {
                 const idParts = item.id ? item.id.split(',') : [];
