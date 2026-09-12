@@ -45,7 +45,7 @@ DB_HOST = os.getenv("DB_HOST", "35.221.215.146")
 DB_USER = os.getenv("DB_USER", "admin1")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "12345678")  # ⚠️ 您的密碼
 # 💡 之前截圖顯示您的資料庫名稱可能是 jjudgment (兩個 j)，請依實際情況確認
-DB_NAME = os.getenv("DB_NAME", "jjudgment")         
+DB_NAME = os.getenv("DB_NAME", "judgment")         
 
 # 💡 正確的 Cloud SQL 連線名稱 (已修正為 asia-east1)
 INSTANCE_CONNECTION_NAME = os.getenv("INSTANCE_CONNECTION_NAME", "judgmentsearch:asia-east1:judgment-search") 
