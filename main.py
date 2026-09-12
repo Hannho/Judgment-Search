@@ -79,7 +79,7 @@ def get_db_connection():
         # ⚠️ 請將下方的連線名稱換成您自己的「執行個體連線名稱」
         # 您可以在 Cloud SQL 的總覽頁面找到，格式通常是「專案ID:區域:執行個體名稱」
         # 例如: 'judgmentsearch:asia-east1:judgment-search'
-        INSTANCE_CONNECTION_NAME = "judgment-search"
+        INSTANCE_CONNECTION_NAME = "judgmentsearch:asia-east1:judgment-search"
         
         return pymysql.connect(
             unix_socket=f'/cloudsql/{INSTANCE_CONNECTION_NAME}',
