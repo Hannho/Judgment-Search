@@ -73,18 +73,32 @@ def get_css():
 
 # 💡 從 Cloud SQL 資料庫讀取所有裁判書
 @app.get("/api/judgments")
-def get_judgments_from_db():
-    try:
-        conn = get_db_connection()
-        with conn.cursor() as cursor:
-            sql = "SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments"
-            cursor.execute(sql)
-            results = cursor.fetchall()
-        conn.close()
-        return results
-    except Exception as e:
-        print(f"❌ 資料庫讀取失敗: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+def get_db_connection():
+    # 判斷是否在 Cloud Run 環境中 (Cloud Run 會自動注入 K_SERVICE 這個環境變數)
+    if os.environ.get("K_SERVICE"):
+        # ⚠️ 請將下方的連線名稱換成您自己的「執行個體連線名稱」
+        # 您可以在 Cloud SQL 的總覽頁面找到，格式通常是「專案ID:區域:執行個體名稱」
+        # 例如: 'judgmentsearch:asia-east1:judgment-search'
+        INSTANCE_CONNECTION_NAME = "judgment-search"
+        
+        return pymysql.connect(
+            unix_socket=f'/cloudsql/{INSTANCE_CONNECTION_NAME}',
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME,
+            charset='utf8mb4',
+            cursorclass=pymysql.cursors.DictCursor
+        )
+    else:
+        # 在本機測試時，維持原本使用公開 IP 連線的方式
+        return pymysql.connect(
+            host=DB_HOST,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME,
+            charset='utf8mb4',
+            cursorclass=pymysql.cursors.DictCursor
+        )
 
 # ==========================================
 # 2. 爬蟲 API 區塊 (/api/get_history)
