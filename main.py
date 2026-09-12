@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import uvicorn
 
 # 爬蟲相關套件
 from selenium import webdriver
@@ -212,3 +213,8 @@ def ask_ai_multiple(query: MultiQAQuery):
     except Exception as e:
         print(f"AI 處理發生錯誤: {e}")
         return {"answer": f"AI 伺服器處理失敗，請確認 API Key 是否設定正確。錯誤詳情：{str(e)}"}
+
+if __name__ == "__main__":
+    # Cloud Run 會透過環境變數傳入 PORT，預設通常是 8080
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
