@@ -43,45 +43,16 @@ app.add_middleware(
 # ==========================================
 DB_HOST = os.getenv("DB_HOST", "35.221.215.146")
 DB_USER = os.getenv("DB_USER", "admin1")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "12345678")  # ⚠️ 請替換為您的密碼，亦可寫在 .env
-DB_NAME = os.getenv("DB_NAME", "judgment")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "12345678")  # ⚠️ 您的密碼
+DB_NAME = os.getenv("DB_NAME", "judgment")         # ⚠️ 請確認您的資料庫名稱，稍早對話中為 jjudgment
+
+# 💡 正確的 Cloud SQL 連線名稱 (已修正為 asia-east1)
+INSTANCE_CONNECTION_NAME = os.getenv("INSTANCE_CONNECTION_NAME", "judgmentsearch:asia-east1:judgment-search") 
 
 def get_db_connection():
-    return pymysql.connect(
-        host=DB_HOST,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        database=DB_NAME,
-        charset='utf8mb4',
-        cursorclass=pymysql.cursors.DictCursor
-    )
-
-# ==========================================
-# 1. 靜態檔案與資料庫資料 API
-# ==========================================
-@app.get("/")
-def read_index():
-    if os.path.exists("index_final.html"):
-        return FileResponse("index_final.html")
-    return {"message": "index_final.html not found"}
-
-@app.get("/style.css")
-def get_css():
-    if os.path.exists("style.css"):
-        return FileResponse("style.css")
-    return {"message": "style.css not found"}
-
-# 💡 從 Cloud SQL 資料庫讀取所有裁判書
-@app.get("/api/judgments")
-def get_db_connection():
-    # 判斷是否在 Cloud Run 環境中 (Cloud Run 會自動注入 K_SERVICE 這個環境變數)
+    """負責建立並回傳資料庫連線的輔助函式"""
+    # 判斷是否在 Cloud Run 環境中 (Cloud Run 會自動注入 K_SERVICE 變數)
     if os.environ.get("K_SERVICE"):
-        # ⚠️ 請將下方的連線名稱換成您自己的「執行個體連線名稱」
-        # 您可以在 Cloud SQL 的總覽頁面找到，格式通常是「專案ID:區域:執行個體名稱」
-        # 例如: 'judgmentsearch:asia-east1:judgment-search'
-# ⚠️ 請確保這串字與 Cloud SQL 介面上顯示的「一字不差」
-        INSTANCE_CONNECTION_NAME = os.getenv("INSTANCE_CONNECTION_NAME", "judgmentsearch:asia-east1:judgment-search") 
-# 如果您的主機在台灣，可能是 asia-east1，請以您控制台複製的為準！        
         return pymysql.connect(
             unix_socket=f'/cloudsql/{INSTANCE_CONNECTION_NAME}',
             user=DB_USER,
@@ -100,6 +71,36 @@ def get_db_connection():
             charset='utf8mb4',
             cursorclass=pymysql.cursors.DictCursor
         )
+
+# ==========================================
+# 1. 靜態檔案與資料庫資料 API
+# ==========================================
+@app.get("/")
+def read_index():
+    if os.path.exists("index_final.html"):
+        return FileResponse("index_final.html")
+    return {"message": "index_final.html not found"}
+
+@app.get("/style.css")
+def get_css():
+    if os.path.exists("style.css"):
+        return FileResponse("style.css")
+    return {"message": "style.css not found"}
+
+# 💡 從 Cloud SQL 資料庫讀取所有裁判書
+@app.get("/api/judgments")
+def get_judgments_from_db():
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            sql = "SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments"
+            cursor.execute(sql)
+            results = cursor.fetchall()
+        conn.close()
+        return results
+    except Exception as e:
+        print(f"❌ 資料庫讀取失敗: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 # ==========================================
 # 2. 爬蟲 API 區塊 (/api/get_history)
