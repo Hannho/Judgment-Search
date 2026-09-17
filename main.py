@@ -76,6 +76,9 @@ def get_db_connection():
 # ==========================================
 # 1. 靜態檔案與資料庫資料 API
 # ==========================================
+# ==========================================
+# 1. 靜態檔案與資料庫資料 API
+# ==========================================
 @app.get("/")
 def read_index():
     if os.path.exists("index_final.html"):
@@ -88,16 +91,64 @@ def get_css():
         return FileResponse("style.css")
     return {"message": "style.css not found"}
 
-# 💡 從 Cloud SQL 資料庫讀取所有裁判書 (已加入防呆與完整錯誤處理)
-@app.get("/api/judgments")
-def get_judgments_from_db():
+# --- 新增：用來接收前端搜尋條件的資料模型 ---
+from typing import Optional
+class JudgmentSearchQuery(BaseModel):
+    court: Optional[str] = ""
+    start_date: Optional[str] = ""
+    end_date: Optional[str] = ""
+    keyword: Optional[str] = ""
+    year: Optional[str] = ""
+    title_kw: Optional[str] = ""
+    content_kw: Optional[str] = ""
+
+# --- 修改：改為 POST 方法，讓資料庫先做第一層大範圍過濾 ---
+@app.post("/api/judgments")
+def get_judgments_from_db(query: JudgmentSearchQuery):
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            # 確實執行 execute 後再 fetchall
-            sql = "SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments ORDER BY date DESC LIMIT 500"
-            cursor.execute(sql)
+            sql = "SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments WHERE 1=1"
+            params = []
+
+            # 1. 過濾法院
+            if query.court:
+                sql += " AND id LIKE %s"
+                params.append(f"%{query.court}%")
+            
+            # 2. 過濾日期區間
+            if query.start_date:
+                sql += " AND date >= %s"
+                params.append(query.start_date)
+            if query.end_date:
+                sql += " AND date <= %s"
+                params.append(query.end_date)
+                
+            # 3. 過濾年度
+            if query.year:
+                sql += " AND year = %s"
+                params.append(query.year)
+
+            # 4. 全文關鍵字 (包含案號、案由、內文)
+            if query.keyword:
+                for kw in query.keyword.split():
+                    sql += " AND (title LIKE %s OR content LIKE %s OR case_no LIKE %s)"
+                    params.extend([f"%{kw}%", f"%{kw}%", f"%{kw}%"])
+
+            # 5. 特定欄位關鍵字
+            if query.title_kw:
+                for kw in query.title_kw.split():
+                    sql += " AND title LIKE %s"
+                    params.append(f"%{kw}%")
+            if query.content_kw:
+                for kw in query.content_kw.split():
+                    sql += " AND content LIKE %s"
+                    params.append(f"%{kw}%")
+
+            # 篩選完後，再限制回傳最新的 500 筆給前端
+            sql += " ORDER BY date DESC LIMIT 500"
+            cursor.execute(sql, tuple(params))
             results = cursor.fetchall()
             
         return results
@@ -106,7 +157,6 @@ def get_judgments_from_db():
         print(error_msg)
         return JSONResponse(status_code=500, content={"error": error_msg})
     finally:
-        # 確保無論成功或失敗，最後都會關閉連線釋放資源
         if conn:
             conn.close()
 
