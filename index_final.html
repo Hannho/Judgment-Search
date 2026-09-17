@@ -240,9 +240,21 @@
         }
 
         function formatROCDate(dateStr) {
-            if (!dateStr || dateStr.length !== 8) return dateStr;
-            const year = parseInt(dateStr.substring(0, 4)) - 1911;
-            return `${year}.${dateStr.substring(4, 6)}.${dateStr.substring(6, 8)}`;
+            if (!dateStr) return dateStr;
+            // 處理新的 2024-01-02 格式
+            if (dateStr.includes('-')) {
+                const parts = dateStr.split('-');
+                if (parts.length === 3) {
+                    const year = parseInt(parts[0], 10) - 1911;
+                    return `${year}.${parts[1]}.${parts[2]}`;
+                }
+            }
+            // 兼容舊的 20240102 格式
+            if (dateStr.length === 8) {
+                const year = parseInt(dateStr.substring(0, 4)) - 1911;
+                return `${year}.${dateStr.substring(4, 6)}.${dateStr.substring(6, 8)}`;
+            }
+            return dateStr;
         }
 
         function showSearchError(msg) {
@@ -522,8 +534,8 @@
                 const itemContent = item.content || "";
                 const itemMainText = item.main_text || "";
                 const itemTitle = item.title || "";
-                const itemDateInt = item.date ? parseInt(item.date, 10) : null;
-
+                // 先把連字號 '-' 拔掉，再轉換成整數 (例如 "2024-01-02" -> "20240102" -> 20240102)
+                const itemDateInt = item.date ? parseInt(item.date.replace(/-/g, ''), 10) : null;
                 if (court !== "" && !(item.id && item.id.includes(court))) return false;
 
                 if (selectedDocType !== "") {
