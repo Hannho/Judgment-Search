@@ -326,9 +326,8 @@
         function applySorting(data, sortType) {
             const sorted = [...data];
             sorted.sort((a, b) => {
-                const dateA = parseInt(a.date, 10) || 0;
-                const dateB = parseInt(b.date, 10) || 0;
-
+                const dateA = a.date ? parseInt(a.date.replace(/-/g, ''), 10) : 0;
+                const dateB = b.date ? parseInt(b.date.replace(/-/g, ''), 10) : 0;
                 const idPartsA = a.id ? a.id.split(',') : [];
                 const idPartsB = b.id ? b.id.split(',') : [];
                 const noA = parseInt((a.case_no && a.case_no.trim()) || idPartsA[3] || 0, 10);
