@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+from typing import Optional
 from dotenv import load_dotenv
 import uvicorn
 
@@ -17,20 +18,15 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
-# AI 相關套件
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
+# AI 相關套件（已改為 Ollama）
 from langchain_ollama import ChatOllama
+from langchain_core.prompts import ChatPromptTemplate
 
 # 載入環境變數
 load_dotenv()
-api_key = os.getenv("GOOGLE_API_KEY")
-if api_key:
-    os.environ["GOOGLE_API_KEY"] = api_key
 
 app = FastAPI()
 
-# 設定 CORS，讓網頁前端可以順利呼叫 API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -44,16 +40,11 @@ app.add_middleware(
 # ==========================================
 DB_HOST = os.getenv("DB_HOST", "35.221.215.146")
 DB_USER = os.getenv("DB_USER", "admin1")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "12345678")  # ⚠️ 您的密碼
-# 💡 之前截圖顯示您的資料庫名稱可能是 jjudgment (兩個 j)，請依實際情況確認
+DB_PASSWORD = os.getenv("DB_PASSWORD", "12345678")
 DB_NAME = os.getenv("DB_NAME", "judgment")         
-
-# 💡 正確的 Cloud SQL 連線名稱 (已修正為 asia-east1)
 INSTANCE_CONNECTION_NAME = os.getenv("INSTANCE_CONNECTION_NAME", "judgmentsearch:asia-east1:judgment-search") 
 
 def get_db_connection():
-    """負責建立並回傳資料庫連線的輔助函式"""
-    # 判斷是否在 Cloud Run 環境中 (Cloud Run 會自動注入 K_SERVICE 變數)
     if os.environ.get("K_SERVICE"):
         return pymysql.connect(
             unix_socket=f'/cloudsql/{INSTANCE_CONNECTION_NAME}',
@@ -64,7 +55,6 @@ def get_db_connection():
             cursorclass=pymysql.cursors.DictCursor
         )
     else:
-        # 在本機測試時，維持原本使用公開 IP 連線的方式
         return pymysql.connect(
             host=DB_HOST,
             user=DB_USER,
@@ -74,9 +64,6 @@ def get_db_connection():
             cursorclass=pymysql.cursors.DictCursor
         )
 
-# ==========================================
-# 1. 靜態檔案與資料庫資料 API
-# ==========================================
 # ==========================================
 # 1. 靜態檔案與資料庫資料 API
 # ==========================================
@@ -92,8 +79,6 @@ def get_css():
         return FileResponse("style.css")
     return {"message": "style.css not found"}
 
-# --- 新增：用來接收前端搜尋條件的資料模型 ---
-from typing import Optional
 class JudgmentSearchQuery(BaseModel):
     court: Optional[str] = ""
     start_date: Optional[str] = ""
@@ -103,7 +88,6 @@ class JudgmentSearchQuery(BaseModel):
     title_kw: Optional[str] = ""
     content_kw: Optional[str] = ""
 
-# --- 修改：改為 POST 方法，讓資料庫先做第一層大範圍過濾 ---
 @app.post("/api/judgments")
 def get_judgments_from_db(query: JudgmentSearchQuery):
     conn = None
@@ -113,31 +97,22 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             sql = "SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments WHERE 1=1"
             params = []
 
-            # 1. 過濾法院
             if query.court:
                 sql += " AND id LIKE %s"
                 params.append(f"%{query.court}%")
-            
-            # 2. 過濾日期區間
             if query.start_date:
                 sql += " AND date >= %s"
                 params.append(query.start_date)
             if query.end_date:
                 sql += " AND date <= %s"
                 params.append(query.end_date)
-                
-            # 3. 過濾年度
             if query.year:
                 sql += " AND year = %s"
                 params.append(query.year)
-
-            # 4. 全文關鍵字 (包含案號、案由、內文)
             if query.keyword:
                 for kw in query.keyword.split():
                     sql += " AND (title LIKE %s OR content LIKE %s OR case_no LIKE %s)"
                     params.extend([f"%{kw}%", f"%{kw}%", f"%{kw}%"])
-
-            # 5. 特定欄位關鍵字
             if query.title_kw:
                 for kw in query.title_kw.split():
                     sql += " AND title LIKE %s"
@@ -147,7 +122,6 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                     sql += " AND content LIKE %s"
                     params.append(f"%{kw}%")
 
-            # 篩選完後，再限制回傳最新的 500 筆給前端
             sql += " ORDER BY date DESC LIMIT 500"
             cursor.execute(sql, tuple(params))
             results = cursor.fetchall()
@@ -259,25 +233,8 @@ class MultiQAQuery(BaseModel):
     judgments_content: list[str]
     question: str
 
-# ==========================================
-# 頂部匯入區塊修改
-# ==========================================
-# 原本：from langchain_google_genai import ChatGoogleGenerativeAI
-# 改為使用 Ollama：
-from langchain_ollama import ChatOllama
-from langchain_core.prompts import ChatPromptTemplate
-
-
-# ==========================================
-# 3. AI 問答 API 區塊 (/api/ask_multiple)
-# ==========================================
-class MultiQAQuery(BaseModel):
-    judgments_content: list[str]
-    question: str
-
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 
-# 在 ask_ai_multiple 函式中：
 @app.post("/api/ask_multiple")
 def ask_ai_multiple(query: MultiQAQuery):
     if not query.judgments_content:
@@ -288,7 +245,7 @@ def ask_ai_multiple(query: MultiQAQuery):
     
     llm = ChatOllama(
         model="taide-law",
-        base_url=OLLAMA_BASE_URL,  # 👈 這裡帶入公開網址
+        base_url=OLLAMA_BASE_URL,
         temperature=0.3
     )
     
