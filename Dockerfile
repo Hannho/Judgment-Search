@@ -1,6 +1,6 @@
 # 使用官方輕量版 Python 映像檔
-FROM python:3.9-slim
-
+# 原本：FROM python:3.9-slim
+FROM python:3.11-slim
 # 💡 新增：安裝系統必備套件、Chromium 瀏覽器與 ChromeDriver
 RUN apt-get update && apt-get install -y \
     wget \
