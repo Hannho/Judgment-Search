@@ -177,25 +177,34 @@ def get_history(req: JudgmentRequest):
     options = webdriver.ChromeOptions()
     options.add_argument('--headless=new')
     options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-dev-shm-usage') # 解決容器記憶體共享區過小
     options.add_argument('--disable-gpu')
     options.add_argument('--disable-notifications')
+    options.add_argument('--single-process')        # 降低記憶體消耗
+    options.add_argument('--window-size=1920,1080')
+    options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
     
+    # 💡 明確指向 apt 安裝的 binary
     if os.path.exists("/usr/bin/chromium"):
         options.binary_location = "/usr/bin/chromium"
     elif os.path.exists("/usr/bin/chromium-browser"):
         options.binary_location = "/usr/bin/chromium-browser"
 
+    # 💡 優先使用系統 apt 安裝的 chromedriver，避免版本衝突
     if os.path.exists("/usr/bin/chromedriver"):
         service = Service("/usr/bin/chromedriver")
+    elif os.path.exists("/usr/lib/chromium-browser/chromedriver"):
+        service = Service("/usr/lib/chromium-browser/chromedriver")
     else:
         service = Service(ChromeDriverManager().install())
         
-    driver = webdriver.Chrome(service=service, options=options)
-    wait = WebDriverWait(driver, 10)
+    driver = None
     history_results = []
     
     try:
+        driver = webdriver.Chrome(service=service, options=options)
+        wait = WebDriverWait(driver, 15)  # 稍微放寬等待秒數至 15 秒
+        
         driver.get("https://judgment.judicial.gov.tw/FJUD/default.aspx")
         
         search_query = f"{court_name}{req.year}{req.case_type}{req.case_no}"
@@ -220,9 +229,10 @@ def get_history(req: JudgmentRequest):
             history_results.append({"title": title, "url": url})
             
     except Exception as e:
-        print(f"爬蟲發生錯誤: {e}")
+        print(f"❌ 爬蟲發生錯誤: {e}")
     finally:
-        driver.quit()
+        if driver:
+            driver.quit()
         
     return {"history": history_results}
 
@@ -250,7 +260,7 @@ def ask_ai_multiple(query: MultiQAQuery):
     )
     
     prompt_template = ChatPromptTemplate.from_messages([
-        ("system", "你是一位專業的中華民國法律助理。請綜合以下提供的 [篩選後裁判書內容] 來回答問題。\n"
+        ("system", "你是一位專業的中華民國律師。請綜合以下提供的 [篩選後裁判書內容] 來回答問題。\n"
                    "回答時，請務必明確指出是依據哪一個案號的判決。\n"
                    "如果你不知道答案，請直接說不知道，不要編造資訊。\n\n"
                    "[篩選後裁判書內容]：\n{context}"),
