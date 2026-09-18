@@ -20,6 +20,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 # AI 相關套件
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_ollama import ChatOllama
 
 # 載入環境變數
 load_dotenv()
@@ -258,18 +259,41 @@ class MultiQAQuery(BaseModel):
     judgments_content: list[str]
     question: str
 
+# ==========================================
+# 頂部匯入區塊修改
+# ==========================================
+# 原本：from langchain_google_genai import ChatGoogleGenerativeAI
+# 改為使用 Ollama：
+from langchain_ollama import ChatOllama
+from langchain_core.prompts import ChatPromptTemplate
+
+
+# ==========================================
+# 3. AI 問答 API 區塊 (/api/ask_multiple)
+# ==========================================
+class MultiQAQuery(BaseModel):
+    judgments_content: list[str]
+    question: str
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+
+# 在 ask_ai_multiple 函式中：
 @app.post("/api/ask_multiple")
 def ask_ai_multiple(query: MultiQAQuery):
     if not query.judgments_content:
         return {"answer": "目前沒有任何案件資料可供閱讀。"}
 
-    texts_to_read = query.judgments_content[:50]
+    texts_to_read = query.judgments_content[:8]
     context = "\n\n---\n\n".join(texts_to_read)
     
-    llm = ChatGoogleGenerativeAI(model="gemini-3.6-flash", temperature=0)
+    llm = ChatOllama(
+        model="taide-law",
+        base_url=OLLAMA_BASE_URL,  # 👈 這裡帶入公開網址
+        temperature=0.3
+    )
     
     prompt_template = ChatPromptTemplate.from_messages([
-        ("system", "你是一位專業的法律助理。請綜合以下提供的 [篩選後裁判書內容] 來回答問題。\n"
+        ("system", "你是一位專業的中華民國法律助理。請綜合以下提供的 [篩選後裁判書內容] 來回答問題。\n"
                    "回答時，請務必明確指出是依據哪一個案號的判決。\n"
                    "如果你不知道答案，請直接說不知道，不要編造資訊。\n\n"
                    "[篩選後裁判書內容]：\n{context}"),
@@ -286,7 +310,7 @@ def ask_ai_multiple(query: MultiQAQuery):
         return {"answer": response.content}
     except Exception as e:
         print(f"AI 處理發生錯誤: {e}")
-        return {"answer": f"AI 伺服器處理失敗，請確認 API Key 是否設定正確。錯誤詳情：{str(e)}"}
+        return {"answer": f"本地 AI 處理失敗，請確認 Ollama 服務是否已正常啟動。錯誤詳情：{str(e)}"}
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
