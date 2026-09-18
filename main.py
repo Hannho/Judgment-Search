@@ -255,59 +255,77 @@ class MultiQAQuery(BaseModel):
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 
+# main.py 的 /api/ask_multiple (強化案件詳情與實例說明)
 @app.post("/api/ask_multiple")
 def ask_ai_multiple(query: MultiQAQuery):
     if not query.judgments_content:
         return {"answer": "目前沒有任何案件資料可供閱讀。"}
 
     try:
-        # 1. 建立 LangChain Documents
         docs = []
-        for content in query.judgments_content:
-            if content and content.strip():
-                docs.append(Document(page_content=content))
-
-        # 2. 進行段落切塊（Chunking）：每塊 500 字，重疊 50 字保持文意連貫
+        # 適度放大 chunk_size 至 650 字，確保能涵蓋「事發經過 + 判賠金額 + 理由」
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=500,
-            chunk_overlap=50,
+            chunk_size=650,
+            chunk_overlap=80,
             separators=["\n\n", "\n", "。", "；", " "]
         )
-        splits = text_splitter.split_documents(docs)
 
-        # 3. 呼叫本機 Ollama Embedding 模型進行向量化
+        for content in query.judgments_content:
+            if not content or not content.strip():
+                continue
+            
+            # 提取案號標籤，如【113年度北簡字第12925號】
+            case_title = "未知案號"
+            if content.startswith("【") and "】" in content:
+                case_title = content.split("】")[0] + "】"
+
+            raw_doc = Document(page_content=content, metadata={"case_title": case_title})
+            splits = text_splitter.split_documents([raw_doc])
+
+            # 強制讓每個切塊頂部都帶有案件標題
+            for s in splits:
+                if not s.page_content.startswith("【"):
+                    s.page_content = f"{case_title}\n{s.page_content}"
+                docs.append(s)
+
+        # 向量化與建立索引
         embeddings = OllamaEmbeddings(
-            model="nomic-embed-text",  # 或使用 bge-m3
+            model="nomic-embed-text",
             base_url=OLLAMA_BASE_URL
         )
+        vectorstore = FAISS.from_documents(documents=docs, embedding=embeddings)
 
-        # 4. 在記憶體中建立即時向量索引 (In-Memory FAISS)
-        vectorstore = FAISS.from_documents(documents=splits, embedding=embeddings)
-
-        # 5. 檢索與使用者問題最相關的 Top 5 關鍵段落
+        # 檢索 5 個最相關的詳細段落
         retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
         relevant_docs = retriever.invoke(query.question)
         
-        # 組裝檢索到的核心段落
         context = "\n\n---\n\n".join([doc.page_content for doc in relevant_docs])
 
-        # 6. 交給本地 TAIDE 8B 模型進行整合回答
+        # 呼叫本地模型
         llm = ChatOllama(
             model="taide-law",
             base_url=OLLAMA_BASE_URL,
-            temperature=0.3
+            temperature=0.2
         )
 
+        # 💡 關鍵：強制規範輸出結構，要求寫出案件經過與法院理由
         prompt_template = ChatPromptTemplate.from_messages([
-            ("system", "你是一位專業的中華民國法律助理。請依據以下從相關裁判書中檢索出的 [關鍵理由段落] 來回答使用者的問題。\n"
-                       "回答時，請務必明確指出是依據哪一個案號的判決理由，並詳細條列說明。\n"
-                       "如果你檢索到的內容不足以回答問題，請如實告知，不要編造資訊。\n\n"
-                       "[關鍵理由段落]：\n{context}"),
+            ("system", "你是一位專業的中華民國法律助理。請依據以下提供的 [裁判書內容段落]，詳細分析並回答使用者的提問。\n\n"
+                       "【回答要求與格式規範】：\n"
+                       "請不要給出空泛籠統的概述，必須針對檢索到的實例逐一詳細說明，每個案件請依循以下格式呈現：\n\n"
+                       "📌 案件一：【完整案號】\n"
+                       "• 案件事實／經過：簡述發生了什麼事（例如原告與被告如何發生車禍、受傷情況或財物損失）。\n"
+                       "• 爭議項目與金額：說明原告請求的項目（如醫療費、車損、慰撫金等）及各自金額。\n"
+                       "• 法院判決結果與理由：法院准許或駁回多少金額？法官採納或不採納的關鍵原因是什麼（例如是否有單據、過失相抵比例、零件折舊計算等）。\n\n"
+                       "📌 案件二：【完整案號】\n"
+                       "（同上格式展開...）\n\n"
+                       "最後請提供一段「綜合分析與常見標準總結」。\n"
+                       "若檢索段落中未提及案情細節，請依現有資訊具體呈現，禁止虛構。\n\n"
+                       "[裁判書內容段落]：\n{context}"),
             ("human", "{input}")
         ])
 
         chain = prompt_template | llm
-
         response = chain.invoke({
             "context": context,
             "input": query.question
@@ -315,8 +333,8 @@ def ask_ai_multiple(query: MultiQAQuery):
         return {"answer": response.content}
 
     except Exception as e:
-        print(f"❌ RAG 處理發生錯誤: {e}")
-        return {"answer": f"本地 AI 處理失敗，請確認 Ollama 服務是否已正常啟動，且已下載 nomic-embed-text 模型。錯誤詳情：{str(e)}"}
+        print(f"❌ 處理發生錯誤: {e}")
+        return {"answer": f"本地 AI 處理失敗，錯誤詳情：{str(e)}"}
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
