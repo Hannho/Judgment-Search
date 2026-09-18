@@ -860,7 +860,7 @@
             `);
 
             // 💡 配合本機 8B 模型 Context 長度，傳送前 5 筆摘要給後端處理
-            const maxCasesToAnalyze = 5;
+            const maxCasesToAnalyze = 30;
             const contentsToSent = currentFilteredData.slice(0, maxCasesToAnalyze).map(item => {
                 const idParts = item.id ? item.id.split(',') : [];
                 const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
