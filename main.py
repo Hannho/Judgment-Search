@@ -3,6 +3,7 @@ import time
 import pymysql
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -18,15 +19,26 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
-# AI 相關套件（已改為 Ollama）
+# AI 相關套件（Ollama）
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
+
+# RAG 相關套件
+from langchain_ollama import ChatOllama, OllamaEmbeddings
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
 
 # 載入環境變數
 load_dotenv()
 
 app = FastAPI()
 
+# 💡 關鍵優化 1：開啟 Gzip 壓縮，將大型判決書 JSON 傳輸量直接壓低 85%，秒速載入
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# 設定 CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -177,20 +189,18 @@ def get_history(req: JudgmentRequest):
     options = webdriver.ChromeOptions()
     options.add_argument('--headless=new')
     options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage') # 解決容器記憶體共享區過小
+    options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-gpu')
     options.add_argument('--disable-notifications')
-    options.add_argument('--single-process')        # 降低記憶體消耗
+    options.add_argument('--single-process')
     options.add_argument('--window-size=1920,1080')
     options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
     
-    # 💡 明確指向 apt 安裝的 binary
     if os.path.exists("/usr/bin/chromium"):
         options.binary_location = "/usr/bin/chromium"
     elif os.path.exists("/usr/bin/chromium-browser"):
         options.binary_location = "/usr/bin/chromium-browser"
 
-    # 💡 優先使用系統 apt 安裝的 chromedriver，避免版本衝突
     if os.path.exists("/usr/bin/chromedriver"):
         service = Service("/usr/bin/chromedriver")
     elif os.path.exists("/usr/lib/chromium-browser/chromedriver"):
@@ -203,7 +213,7 @@ def get_history(req: JudgmentRequest):
     
     try:
         driver = webdriver.Chrome(service=service, options=options)
-        wait = WebDriverWait(driver, 15)  # 稍微放寬等待秒數至 15 秒
+        wait = WebDriverWait(driver, 12)
         
         driver.get("https://judgment.judicial.gov.tw/FJUD/default.aspx")
         
@@ -250,34 +260,63 @@ def ask_ai_multiple(query: MultiQAQuery):
     if not query.judgments_content:
         return {"answer": "目前沒有任何案件資料可供閱讀。"}
 
-    texts_to_read = query.judgments_content[:8]
-    context = "\n\n---\n\n".join(texts_to_read)
-    
-    llm = ChatOllama(
-        model="taide-law",
-        base_url=OLLAMA_BASE_URL,
-        temperature=0.3
-    )
-    
-    prompt_template = ChatPromptTemplate.from_messages([
-        ("system", "你是一位專業的中華民國律師。請綜合以下提供的 [篩選後裁判書內容] 來回答問題。\n"
-                   "回答時，請務必明確指出是依據哪一個案號的判決。\n"
-                   "如果你不知道答案，請直接說不知道，不要編造資訊。\n\n"
-                   "[篩選後裁判書內容]：\n{context}"),
-        ("human", "{input}")
-    ])
-    
-    chain = prompt_template | llm
-    
     try:
+        # 1. 建立 LangChain Documents
+        docs = []
+        for content in query.judgments_content:
+            if content and content.strip():
+                docs.append(Document(page_content=content))
+
+        # 2. 進行段落切塊（Chunking）：每塊 500 字，重疊 50 字保持文意連貫
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=50,
+            separators=["\n\n", "\n", "。", "；", " "]
+        )
+        splits = text_splitter.split_documents(docs)
+
+        # 3. 呼叫本機 Ollama Embedding 模型進行向量化
+        embeddings = OllamaEmbeddings(
+            model="nomic-embed-text",  # 或使用 bge-m3
+            base_url=OLLAMA_BASE_URL
+        )
+
+        # 4. 在記憶體中建立即時向量索引 (In-Memory FAISS)
+        vectorstore = FAISS.from_documents(documents=splits, embedding=embeddings)
+
+        # 5. 檢索與使用者問題最相關的 Top 5 關鍵段落
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+        relevant_docs = retriever.invoke(query.question)
+        
+        # 組裝檢索到的核心段落
+        context = "\n\n---\n\n".join([doc.page_content for doc in relevant_docs])
+
+        # 6. 交給本地 TAIDE 8B 模型進行整合回答
+        llm = ChatOllama(
+            model="taide-law",
+            base_url=OLLAMA_BASE_URL,
+            temperature=0.3
+        )
+
+        prompt_template = ChatPromptTemplate.from_messages([
+            ("system", "你是一位專業的中華民國法律助理。請依據以下從相關裁判書中檢索出的 [關鍵理由段落] 來回答使用者的問題。\n"
+                       "回答時，請務必明確指出是依據哪一個案號的判決理由，並詳細條列說明。\n"
+                       "如果你檢索到的內容不足以回答問題，請如實告知，不要編造資訊。\n\n"
+                       "[關鍵理由段落]：\n{context}"),
+            ("human", "{input}")
+        ])
+
+        chain = prompt_template | llm
+
         response = chain.invoke({
             "context": context,
             "input": query.question
         })
         return {"answer": response.content}
+
     except Exception as e:
-        print(f"AI 處理發生錯誤: {e}")
-        return {"answer": f"本地 AI 處理失敗，請確認 Ollama 服務是否已正常啟動。錯誤詳情：{str(e)}"}
+        print(f"❌ RAG 處理發生錯誤: {e}")
+        return {"answer": f"本地 AI 處理失敗，請確認 Ollama 服務是否已正常啟動，且已下載 nomic-embed-text 模型。錯誤詳情：{str(e)}"}
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))

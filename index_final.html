@@ -6,7 +6,6 @@
     <title>裁判書搜尋與歷審查詢系統</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        /* 新增：分頁按鈕區塊樣式 */
         .pagination-controls {
             text-align: center;
             margin-top: 15px;
@@ -49,7 +48,6 @@
             <button class="btn-reset" type="button" onclick="resetSearch()">重設</button>
         </div>
 
-        <!-- 錯誤提示條 -->
         <div id="searchErrorMessage" class="alert-error"></div>
 
         <!-- 司法院風格進階搜尋面板 -->
@@ -126,7 +124,7 @@
         </div>
     </div>
 
-    <!-- 🤖 裁判書 AI 智慧分析對話助手 -->
+    <!-- 🤖 裁判書 AI 智慧分析助理 -->
     <div class="chat-card">
         <div class="chat-header">
             <h4>🤖 裁判書 AI 智慧分析助理</h4>
@@ -136,7 +134,7 @@
             <div class="chat-bubble-row bot">
                 <div class="chat-avatar bot-avatar">AI</div>
                 <div class="chat-bubble bot-bubble">
-                    你好！我是裁判書分析助理。你可以針對目前搜尋列表中的案件提出任何法律或統計問題（例如：「這些詐欺案件的被告大多判刑多久？」或「請幫我整理這些交通事故的主文責任比例」）。
+                    你好！我是裁判書分析助理。你可以針對目前搜尋列表中的案件提出任何法律或統計問題（例如：「這些詐欺案件的被告大多判刑多久？」或「請幫我整理這些案件的主文賠償金額」）。
                 </div>
             </div>
         </div>
@@ -172,11 +170,9 @@
         let currentFilteredData = [];
         let currentSearchKeywords = [];
 
-        // 新增：分頁控制變數
         let currentPage = 1;
         const itemsPerPage = 10;
 
-        // 全台法院、高分院、高等行政法院、簡易庭完整中文對照表
         const courtMapping = {
             "TPS": "最高法院", "TPA": "最高行政法院", "TPC": "懲戒法院", "CPC": "司法院憲法法庭",
             "TPH": "臺灣高等法院", "TCH": "臺灣高等法院臺中分院", "TNH": "臺灣高等法院臺南分院",
@@ -241,7 +237,6 @@
 
         function formatROCDate(dateStr) {
             if (!dateStr) return dateStr;
-            // 處理新的 2024-01-02 格式
             if (dateStr.includes('-')) {
                 const parts = dateStr.split('-');
                 if (parts.length === 3) {
@@ -249,7 +244,6 @@
                     return `${year}.${parts[1]}.${parts[2]}`;
                 }
             }
-            // 兼容舊的 20240102 格式
             if (dateStr.length === 8) {
                 const year = parseInt(dateStr.substring(0, 4)) - 1911;
                 return `${year}.${dateStr.substring(4, 6)}.${dateStr.substring(6, 8)}`;
@@ -357,7 +351,7 @@
 
         function handleSortChange(sortType) {
             currentFilteredData = applySorting(currentFilteredData, sortType);
-            currentPage = 1; // 排序後回到第一頁
+            currentPage = 1;
             renderTableBody(currentFilteredData);
         }
 
@@ -391,7 +385,7 @@
             const sortSelect = document.getElementById('tableSortSelect');
             const sortType = sortSelect ? sortSelect.value : "date_desc";
             currentFilteredData = applySorting(judgmentsData, sortType);
-            currentPage = 1; // 重設後回到第一頁
+            currentPage = 1;
             displayResults(currentFilteredData);
             document.getElementById('sidePanel').style.display = "none";
         }
@@ -419,8 +413,7 @@
             return parseInt(`${fullYear}${fullMonth}${fullDay}`, 10);
         }
 
-        // 💡 直接從後端 API (/api/judgments) 向 Google Cloud SQL 撈取資料
-        // 💡 剛載入網頁時，先用空的條件呼叫 API 取得最新 500 筆
+        // 初次載入
         fetch('/api/judgments', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -443,7 +436,6 @@
             document.getElementById('results').innerHTML = `<p style="color:red;">❌ 無法從資料庫載入裁判書資料，請確認後端伺服器與 Cloud SQL 連線設定。</p>`;
         });
 
-        // 💡 點擊搜尋時的非同步處理
         async function searchJudgments() {
             clearSearchError();
 
@@ -461,7 +453,6 @@
             const advMainText = document.getElementById('advMainText').value;
             const advContent = document.getElementById('advContent').value;
 
-            // 處理關鍵字高亮
             currentSearchKeywords = [];
             [...parseKeywords(quickKeyword), ...parseKeywords(advTitle), ...parseKeywords(advMainText), ...parseKeywords(advContent)].forEach(kw => {
                 if (kw && !currentSearchKeywords.includes(kw)) {
@@ -469,7 +460,6 @@
                 }
             });
 
-            // 準備傳給後端的日期 (YYYY-MM-DD)
             let backendStartDate = "";
             let backendEndDate = "";
             let startDateInt = null;
@@ -508,7 +498,6 @@
                 return;
             }
 
-            // 構建傳給資料庫的搜尋條件
             const searchPayload = {
                 court: court,
                 start_date: backendStartDate,
@@ -519,7 +508,6 @@
                 content_kw: advContent
             };
 
-            // 呼叫 API 取回過濾後的資料
             try {
                 document.getElementById('results').innerHTML = '<p>⏳ 正在從雲端資料庫搜尋中，請稍候...</p>';
                 
@@ -542,7 +530,6 @@
                 return;
             }
 
-            // 在前端對後端傳回的 500 筆資料進行最後的細節過濾 (案件類別、檔案大小等)
             const sizeMinVal = document.getElementById('advSizeMin').value.trim();
             const sizeMaxVal = document.getElementById('advSizeMax').value.trim();
             const sizeMin = sizeMinVal !== "" ? parseFloat(sizeMinVal) : NaN;
@@ -609,7 +596,6 @@
             document.getElementById('sidePanel').style.display = "none"; 
         }
 
-        // 新增/修改：分頁與表格渲染邏輯
         function renderTableBody(data) {
             const tbody = document.getElementById('resultTableBody');
             if (!tbody) return;
@@ -617,18 +603,16 @@
             const totalItems = data.length;
             const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
             
-            // 確保頁數在合理範圍內
             if (currentPage < 1) currentPage = 1;
             if (currentPage > totalPages) currentPage = totalPages;
 
-            // 計算當前頁數的資料切片
             const startIndex = (currentPage - 1) * itemsPerPage;
             const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
             const paginatedData = data.slice(startIndex, endIndex);
 
             let bodyHtml = "";
             paginatedData.forEach((item, index) => {
-                const absoluteIndex = startIndex + index + 1; // 計算真實序號 (如跨頁會繼續編號 11, 12...)
+                const absoluteIndex = startIndex + index + 1;
                 const idParts = item.id ? item.id.split(',') : [];
                 const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
                 const displayType = (item.case_type && item.case_type.trim() !== "") ? item.case_type : (idParts[2] || "");
@@ -667,15 +651,11 @@
                     </tr>`;
             });
             tbody.innerHTML = bodyHtml;
-
-            // 渲染分頁按鈕 UI
             renderPaginationUI(totalPages);
         }
 
-        // 新增：繪製分頁按鈕 UI
         function renderPaginationUI(totalPages) {
             let paginationDiv = document.getElementById('paginationControls');
-            // 如果不存在，則建立一個並放在結果列表的最後面
             if (!paginationDiv) {
                 paginationDiv = document.createElement('div');
                 paginationDiv.id = 'paginationControls';
@@ -695,11 +675,9 @@
             `;
         }
 
-        // 新增：切換頁碼功能
         function changePage(delta) {
             currentPage += delta;
             renderTableBody(currentFilteredData);
-            // 換頁後自動將畫面捲動回表格最上方，方便閱讀
             document.querySelector('.table-toolbar').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
@@ -752,7 +730,7 @@
                      </table>`;
             
             resultsDiv.innerHTML = html;
-            renderTableBody(data); // 渲染表格並自動產生分頁 UI
+            renderTableBody(data);
         }
 
         function showFullContent(id) {
@@ -801,12 +779,12 @@
             })
             .catch(err => {
                 loadingBox.style.display = "none";
-                historyBox.innerHTML = "<span style='color:red;'>連線至爬蟲伺服器失敗，請確認後端已啟動。</span>";
+                historyBox.innerHTML = "<span style='color:red;'>歷審爬蟲暫時無法取得資料，請確認司法院網站連線狀態。</span>";
                 historyBox.style.display = "block";
             });
         }
 
-        // 🤖 聊天機器人相關功能函式
+        // 🤖 聊天機器人
         function handleChatKeyDown(event) {
             if (event.key === 'Enter') {
                 event.preventDefault();
@@ -881,8 +859,8 @@
                 <span style="color:#64748b; font-size:0.88em; margin-left:4px;">AI 正在研讀搜尋結果並統整分析中...</span>
             `);
 
-            // AI 助理最多閱讀前 50 筆資料 (不受畫面上分頁的限制)
-            const maxCasesToAnalyze = 50;
+            // 💡 配合本機 8B 模型 Context 長度，傳送前 5 筆摘要給後端處理
+            const maxCasesToAnalyze = 5;
             const contentsToSent = currentFilteredData.slice(0, maxCasesToAnalyze).map(item => {
                 const idParts = item.id ? item.id.split(',') : [];
                 const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
@@ -918,7 +896,7 @@
             .catch(err => {
                 console.error(err);
                 const botBubble = loadingRow.querySelector('.chat-bubble');
-                botBubble.innerHTML = `<span style="color:#d32f2f;">連線失敗：請確認 FastAPI 後端伺服器是否已正常啟動。</span>`;
+                botBubble.innerHTML = `<span style="color:#d32f2f;">連線失敗：請確認後端伺服器與本機模型服務是否正常啟動。</span>`;
             })
             .finally(() => {
                 const input = document.getElementById('chatInput');
