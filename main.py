@@ -1,5 +1,6 @@
 import os
 import time
+import asyncio
 import pymysql
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,13 +23,6 @@ from webdriver_manager.chrome import ChromeDriverManager
 # AI 相關套件（Ollama）
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
-
-# RAG 相關套件
-from langchain_ollama import ChatOllama, OllamaEmbeddings
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
 
 # 載入環境變數
 load_dotenv()
@@ -247,7 +241,7 @@ def get_history(req: JudgmentRequest):
     return {"history": history_results}
 
 # ==========================================
-# 3. AI 問答 API 區塊 (/api/ask_multiple)
+# 3. AI 問答 API 區塊 (/api/ask_multiple - Map-Reduce 架構)
 # ==========================================
 class MultiQAQuery(BaseModel):
     judgments_content: list[str]
@@ -255,206 +249,196 @@ class MultiQAQuery(BaseModel):
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 
-# main.py 的 /api/ask_multiple (強化案件詳情與實例說明)
+# 第一階段：單篇裁判書結構化萃取 Prompt (Map)
+map_prompt = ChatPromptTemplate.from_messages([
+    ("system", "你是一位專業的法院司法助理。請從以下提供的【單篇裁判書】中精確擷取資訊。\n"
+               "【重要原則】：只記錄文中明確記載的內容，禁止臆測；若未提及請填寫「判決未載明」。\n\n"
+               "請依固定格式輸出：\n"
+               "判決字號與案由：\n"
+               "一、案件事實經過：（原被告發生何事、碰撞或爭議經過、受損情形）\n"
+               "二、原告請求：（各項請求項目與各自金額）\n"
+               "三、法院認定結果：（准許金額、駁回金額）\n"
+               "四、法院裁判理由：（准許或駁回理由、單據審核、折舊、過失相抵比例等）\n"
+               "五、核心關鍵考量因素："),
+    ("human", "【單篇裁判書內容】：\n{single_case_text}")
+])
+
+# 第二階段：全局跨案件比對與綜合分析 Prompt (Reduce - 完整保留你設定的司法標準)
+reduce_prompt = ChatPromptTemplate.from_messages([
+    ("system", """你是一個專門分析中華民國法院判決的司法判決分析 AI。
+
+你的任務不是自行提供法律意見，而是「嚴格根據使用者提供的判決內容」，整理、比較並分析案件，回答使用者問題。
+
+【最重要的規則】
+
+1. 只能使用下方提供的判決內容作為分析依據。
+2. 不得自行捏造案件事實、法院理由、法律條文、判決結果或金額。
+3. 如果提供的判決內容沒有足夠資料回答問題，必須明確說明「提供的判決資料不足以確認」。
+4. 不可以把自己的推測寫成法院的見解。
+5. 必須區分：
+   - 判決明確記載的內容
+   - 根據多份判決整理出的共同因素
+   - 無法由判決確認的推測
+6. 每一個案件都必須獨立分析，不可以把不同案件的事實混在一起。
+7. 分析多個案件時，必須比較案件之間的差異，而不是只逐案摘要。
+8. 最後的綜合結論必須能夠從前面的案件分析得到支持。
+9. 如果不同判決的認定不同，必須明確呈現差異，不可以強行歸納成單一標準。
+10. 不要引用沒有出現在提供資料中的判決或法律資料。
+
+【分析流程】
+
+收到使用者問題後，請依照以下順序進行：
+
+第一步：確認問題
+先判斷使用者真正想知道的是：
+- 法院最後判多少？
+- 法院為什麼這樣判？
+- 哪些因素影響金額？
+- 不同法院/案件之間有什麼差異？
+- 某種案件通常如何判斷？
+- 或其他問題。
+
+第二步：逐案分析
+對提供的每一個判決，分別整理：
+
+【案件一】
+判決字號：
+案件類型：
+
+一、案件事實
+- 原告發生什麼事情
+- 被告做了什麼
+- 造成什麼損害
+
+二、原告請求
+- 請求項目
+- 請求金額
+
+三、法院最後認定
+- 法院准許金額
+- 法院駁回或減少的部分
+
+四、法院判斷理由
+說明法院為什麼准許或不准許。
+
+五、影響結果的關鍵因素
+只列出判決中明確可以找到的因素。
+
+六、判決依據
+引用或摘要判決中能直接支持上述分析的內容。
+
+然後以完全相同的格式分析案件二、案件三……。
+
+第三步：案件比較
+
+將所有案件進行比較，至少比較：
+
+| 比較項目 | 案件一 | 案件二 | 案件三 |
+|---|---|---|---|
+| 案件事實 | | | |
+| 傷害/損害程度 | | | |
+| 原告請求 | | | |
+| 法院認定 | | | |
+| 法院考量因素 | | | |
+| 最終結果 | | | |
+
+如果某項資料在判決中沒有出現，請寫「判決未載明」。
+
+第四步：綜合分析
+
+根據上述判決，整理：
+
+1. 多數判決共同考量的因素
+2. 不同判決出現的不同考量因素
+3. 哪些因素可能造成金額或結果差異
+4. 相似案件為什麼可能得到不同結果
+5. 判決中是否可以整理出某種判斷趨勢
+
+注意：
+「共同出現」不代表法院存在一個正式統一標準。
+不要自行創造法院不存在的計算公式。
+
+第五步：回答使用者問題
+
+最後直接回答使用者最初的問題。
+回答時：
+- 優先使用提供的判決證據
+- 說明結論來自哪些案件
+- 如果案件之間存在差異，必須說明
+- 如果資料不足，必須明確指出
+
+【證據要求】
+任何重要結論都必須盡可能指出對應的判決字號。
+例如：「在提供的判決中，法院曾將受害人的傷勢、治療期間及生活影響納入慰撫金判斷。此因素可見於：○○年度○○字第○○號、○○年度○○字第○○號。」
+如果提供的判決沒有足夠證據支持某個結論，不得自行補充。
+
+【重要】
+你不是在創作法律文章。
+你的工作是：「判決資料 → 逐案抽取 → 案件比較 → 找出共同與差異 → 根據證據回答問題」
+因此，寧可回答「提供的判決資料不足」，也不要猜測。
+
+【提供的判決資料】：
+{context}"""),
+    ("human", "{input}")
+])
+
 @app.post("/api/ask_multiple")
-def ask_ai_multiple(query: MultiQAQuery):
+async def ask_ai_multiple(query: MultiQAQuery):
     if not query.judgments_content:
         return {"answer": "目前沒有任何案件資料可供閱讀。"}
 
     try:
-        docs = []
-        # 適度放大 chunk_size 至 650 字，確保能涵蓋「事發經過 + 判賠金額 + 理由」
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=650,
-            chunk_overlap=80,
-            separators=["\n\n", "\n", "。", "；", " "]
-        )
-
-        for content in query.judgments_content:
-            if not content or not content.strip():
-                continue
-            
-            # 提取案號標籤，如【113年度北簡字第12925號】
-            case_title = "未知案號"
-            if content.startswith("【") and "】" in content:
-                case_title = content.split("】")[0] + "】"
-
-            raw_doc = Document(page_content=content, metadata={"case_title": case_title})
-            splits = text_splitter.split_documents([raw_doc])
-
-            # 強制讓每個切塊頂部都帶有案件標題
-            for s in splits:
-                if not s.page_content.startswith("【"):
-                    s.page_content = f"{case_title}\n{s.page_content}"
-                docs.append(s)
-
-        # 向量化與建立索引
-        embeddings = OllamaEmbeddings(
-            model="nomic-embed-text",
-            base_url=OLLAMA_BASE_URL
-        )
-        vectorstore = FAISS.from_documents(documents=docs, embedding=embeddings)
-
-        # 檢索 5 個最相關的詳細段落
-        retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
-        relevant_docs = retriever.invoke(query.question)
-        
-        context = "\n\n---\n\n".join([doc.page_content for doc in relevant_docs])
-
-        # 呼叫本地模型
+        # 呼叫本地模型 (保持低 temperature 杜絕胡思亂想)
         llm = ChatOllama(
-            model="taide-law",
+            model="taide-law",  # 如有切換至 qwen2.5:14b 可在此處更換
             base_url=OLLAMA_BASE_URL,
-            temperature=0.2
+            temperature=0.1
         )
 
-        # 💡 關鍵：強制規範輸出結構，要求寫出案件經過與法院理由
-        prompt_template = ChatPromptTemplate.from_messages([
-    (
-                "system",
-                """你是一個專門分析中華民國法院判決的司法判決分析 AI。
+        map_chain = map_prompt | llm
+        reduce_chain = reduce_prompt | llm
 
-        你的任務不是自行提供法律意見，而是「嚴格根據使用者提供的判決內容」，整理、比較並分析案件，回答使用者問題。
+        # 1. 篩選判決書（最多分析前 10 篇最具關聯案件）
+        valid_cases = [c.strip() for c in query.judgments_content if c and c.strip()][:10]
 
-        【最重要的規則】
+        if not valid_cases:
+            return {"answer": "提供的判決內容為空，無法進行分析。"}
 
-        1. 只能使用下方提供的判決內容作為分析依據。
-        2. 不得自行捏造案件事實、法院理由、法律條文、判決結果或金額。
-        3. 如果提供的判決內容沒有足夠資料回答問題，必須明確說明「提供的判決資料不足以確認」。
-        4. 不可以把自己的推測寫成法院的見解。
-        5. 必須區分：
-        - 判決明確記載的內容
-        - 根據多份判決整理出的共同因素
-        - 無法由判決確認的推測
-        6. 每一個案件都必須獨立分析，不可以把不同案件的事實混在一起。
-        7. 分析多個案件時，必須比較案件之間的差異，而不是只逐案摘要。
-        8. 最後的綜合結論必須能夠從前面的案件分析得到支持。
-        9. 如果不同判決的認定不同，必須明確呈現差異，不可以強行歸納成單一標準。
-        10. 不要引用沒有出現在提供資料中的判決或法律資料。
+        # 2. Map 階段：逐篇精準擷取「主文與得心證之理由」核心段落
+        extracted_summaries = []
+        for idx, content in enumerate(valid_cases):
+            # 保留開頭標題（含案號）
+            header = content[:200]
+            core_reason = ""
+            
+            # 優先定位核心法官理由段落
+            for kw in ["得心證之理由", "事實及理由", "理    由", "理  由", "理由："]:
+                if kw in content:
+                    core_reason = content.split(kw, 1)[1]
+                    break
+            
+            if not core_reason:
+                core_reason = content[200:]
 
-        【分析流程】
+            # 每篇限制 2000 字精華，單次消耗約 2000 tokens，完全不爆顯存
+            clean_case_text = f"{header}\n\n【核心裁判理由】\n{core_reason[:2000]}"
 
-        收到使用者問題後，請依照以下順序進行：
+            try:
+                summary_res = await map_chain.ainvoke({"single_case_text": clean_case_text})
+                extracted_summaries.append(f"=== 【案件 {idx+1} 抽取資料】 ===\n{summary_res.content}\n")
+            except Exception as single_err:
+                print(f"⚠️ 案件 {idx+1} 擷取失敗: {single_err}")
+                extracted_summaries.append(f"=== 【案件 {idx+1} 抽取資料】 ===\n（此案件抽取失敗，略過）\n")
 
-        第一步：確認問題
-        先判斷使用者真正想知道的是：
-        - 法院最後判多少？
-        - 法院為什麼這樣判？
-        - 哪些因素影響金額？
-        - 不同法院/案件之間有什麼差異？
-        - 某種案件通常如何判斷？
-        - 或其他問題。
+        # 3. Reduce 階段：組合所有結構化資料，交由司法 Prompt 完整總結
+        combined_context = "\n".join(extracted_summaries)
 
-        第二步：逐案分析
-        對提供的每一個判決，分別整理：
-
-        【案件一】
-        判決字號：
-        案件類型：
-
-        一、案件事實
-        - 原告發生什麼事情
-        - 被告做了什麼
-        - 造成什麼損害
-
-        二、原告請求
-        - 請求項目
-        - 請求金額
-
-        三、法院最後認定
-        - 法院准許金額
-        - 法院駁回或減少的部分
-
-        四、法院判斷理由
-        說明法院為什麼准許或不准許。
-
-        五、影響結果的關鍵因素
-        只列出判決中明確可以找到的因素。
-
-        六、判決依據
-        引用或摘要判決中能直接支持上述分析的內容。
-
-        然後以完全相同的格式分析案件二、案件三……。
-
-        第三步：案件比較
-
-        將所有案件進行比較，至少比較：
-
-        | 比較項目 | 案件一 | 案件二 | 案件三 |
-        |---|---|---|---|
-        | 案件事實 | | | |
-        | 傷害/損害程度 | | | |
-        | 原告請求 | | | |
-        | 法院認定 | | | |
-        | 法院考量因素 | | | |
-        | 最終結果 | | | |
-
-        如果某項資料在判決中沒有出現，請寫「判決未載明」。
-
-        第四步：綜合分析
-
-        根據上述判決，整理：
-
-        1. 多數判決共同考量的因素
-        2. 不同判決出現的不同考量因素
-        3. 哪些因素可能造成金額或結果差異
-        4. 相似案件為什麼可能得到不同結果
-        5. 判決中是否可以整理出某種判斷趨勢
-
-        注意：
-
-        「共同出現」不代表法院存在一個正式統一標準。
-
-        不要自行創造法院不存在的計算公式。
-
-        第五步：回答使用者問題
-
-        最後直接回答使用者最初的問題。
-
-        回答時：
-
-        - 優先使用提供的判決證據
-        - 說明結論來自哪些案件
-        - 如果案件之間存在差異，必須說明
-        - 如果資料不足，必須明確指出
-
-        【證據要求】
-
-        任何重要結論都必須盡可能指出對應的判決字號。
-
-        例如：
-
-        「在提供的判決中，法院曾將受害人的傷勢、治療期間及生活影響納入慰撫金判斷。」
-
-        後面應說明：
-
-        「此因素可見於：○○年度○○字第○○號、○○年度○○字第○○號。」
-
-        如果提供的判決沒有足夠證據支持某個結論，不得自行補充。
-
-        【重要】
-
-        你不是在創作法律文章。
-
-        你的工作是：
-
-        「判決資料 → 逐案抽取 → 案件比較 → 找出共同與差異 → 根據證據回答問題」
-
-        因此，寧可回答「提供的判決資料不足」，也不要猜測。
-
-        【提供的判決資料】
-
-        {context}"""
-            ),
-            ("human", "{input}")
-        ])
-
-        chain = prompt_template | llm
-        response = chain.invoke({
-            "context": context,
+        final_response = await reduce_chain.ainvoke({
+            "context": combined_context,
             "input": query.question
         })
-        return {"answer": response.content}
+
+        return {"answer": final_response.content}
 
     except Exception as e:
         print(f"❌ 處理發生錯誤: {e}")
