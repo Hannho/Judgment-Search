@@ -116,10 +116,17 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                 params.append(f"{query.court}%") 
             if query.start_date:
                 where_clauses.append("date >= %s")
-                params.append(query.start_date.replace('-', ''))
+                sd = query.start_date.replace('-', '')
+                if len(sd) == 8: # 確保長度是 YYYYMMDD
+                    sd = f"{sd[:4]}-{sd[4:6]}-{sd[6:8]}"
+                params.append(sd)
+                
             if query.end_date:
                 where_clauses.append("date <= %s")
-                params.append(query.end_date.replace('-', ''))
+                ed = query.end_date.replace('-', '')
+                if len(ed) == 8: # 確保長度是 YYYYMMDD
+                    ed = f"{ed[:4]}-{ed[4:6]}-{ed[6:8]}"
+                params.append(ed)
             if query.year:
                 where_clauses.append("year = %s")
                 params.append(query.year)
