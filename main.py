@@ -100,6 +100,7 @@ class JudgmentSearchQuery(BaseModel):
     adv_size_max: Optional[float] = None
 
 @app.post("/api/judgments")
+@app.post("/api/judgments")
 def get_judgments_from_db(query: JudgmentSearchQuery):
     conn = None
     try:
@@ -111,7 +112,8 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             # 基礎搜尋條件
             if query.court:
                 where_clauses.append("id LIKE %s")
-                params.append(f"%{query.court}%")
+                # 🛑【修正 1】拿掉開頭的 %，讓 ID 欄位可以正常使用索引
+                params.append(f"{query.court}%") 
             if query.start_date:
                 where_clauses.append("date >= %s")
                 params.append(query.start_date.replace('-', ''))
@@ -179,7 +181,8 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             where_sql = " WHERE " + " AND ".join(where_clauses)
 
             # 1. 獲取符合條件的總筆數
-            count_sql = f"SELECT COUNT(*) as total FROM judgments {where_sql}"
+            # 🛑【修正 2】優化 COUNT 查詢，避免全表掃描，限制最多顯示 100 頁 (1000 筆)
+            count_sql = f"SELECT COUNT(*) as total FROM (SELECT 1 FROM judgments {where_sql} LIMIT 1000) as dummy"
             cursor.execute(count_sql, tuple(params))
             total_count = cursor.fetchone()['total']
 
