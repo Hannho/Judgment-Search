@@ -7,31 +7,16 @@
     <link rel="stylesheet" href="style.css">
     <style>
         .pagination-controls {
-            text-align: center;
-            margin-top: 15px;
-            padding: 12px;
-            background: #f8f9fa;
-            border-radius: 6px;
-            border: 1px solid #e9ecef;
+            text-align: center; margin-top: 15px; padding: 12px;
+            background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;
         }
         .pagination-controls button {
-            padding: 8px 16px;
-            margin: 0 10px;
-            border: 1px solid #ccc;
-            background: #fff;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.95em;
-            transition: background 0.2s;
+            padding: 8px 16px; margin: 0 10px; border: 1px solid #ccc;
+            background: #fff; border-radius: 4px; cursor: pointer;
+            font-size: 0.95em; transition: background 0.2s;
         }
-        .pagination-controls button:hover:not(:disabled) {
-            background: #e2e6ea;
-        }
-        .pagination-controls button:disabled {
-            cursor: not-allowed;
-            opacity: 0.5;
-            background: #f1f3f5;
-        }
+        .pagination-controls button:hover:not(:disabled) { background: #e2e6ea; }
+        .pagination-controls button:disabled { cursor: not-allowed; opacity: 0.5; background: #f1f3f5; }
     </style>
 </head>
 <body>
@@ -124,45 +109,54 @@
         </div>
     </div>
 
-    <!-- 🤖 裁判書 AI 智慧分析助理 -->
-    <div class="chat-card">
-        <div class="chat-header">
-            <h4>🤖 裁判書 AI 智慧分析助理</h4>
-            <button class="chat-clear-btn" type="button" onclick="clearChatMessages()">清空對話</button>
-        </div>
-        <div id="chatMessages" class="chat-messages">
-            <div class="chat-bubble-row bot">
-                <div class="chat-avatar bot-avatar">AI</div>
-                <div class="chat-bubble bot-bubble">
-                    你好！我是裁判書分析助理。你可以針對目前搜尋列表中的案件提出任何法律或統計問題（例如：「這些詐欺案件的被告大多判刑多久？」或「請幫我整理這些案件的主文賠償金額」）。
+    <!-- 網頁主要左右佈局 -->
+    <div class="page-layout">
+        
+        <!-- 左側：搜尋結果與詳情 -->
+        <div class="content-area">
+            <div class="main-container">
+                <!-- 左側：搜尋結果列表 -->
+                <div id="results" class="list-panel">
+                    <p>資料從資料庫載入中，請稍候...</p>
+                </div>
+
+                <!-- 右側彈出/下方：判決書詳情與歷審紀錄 -->
+                <div id="sidePanel" class="detail-panel">
+                    <h3 id="sideTitle" style="color: #0000cc; margin-top: 0;"></h3>
+                    <div id="sideMeta" style="color: #666; font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 10px;"></div>
+                    
+                    <div id="historyLoading" class="history-loading">
+                        ⏳ 正在啟動背景爬蟲，即時抓取歷審紀錄，請稍候約 5-10 秒...
+                    </div>
+                    <div id="sideHistory" class="history-box" style="display: none;"></div>
+
+                    <div id="sideBody" style="white-space: pre-wrap; font-size: 1.05em; line-height: 1.8; color: #222; margin-top: 15px;"></div>
                 </div>
             </div>
         </div>
-        <div class="chat-input-area">
-            <input type="text" id="chatInput" placeholder="請輸入對當前搜尋案件的提問..." onkeydown="handleChatKeyDown(event)">
-            <button id="chatSendBtn" class="chat-send-btn" onclick="sendChatMessage()">發送</button>
-        </div>
-    </div>
 
-    <!-- 左右分欄內容區 -->
-    <div class="main-container">
-        <!-- 左側：搜尋結果列表 -->
-        <div id="results" class="list-panel">
-            <p>資料從資料庫載入中，請稍候...</p>
-        </div>
-
-        <!-- 右側：判決書詳情與歷審紀錄 -->
-        <div id="sidePanel" class="detail-panel">
-            <h3 id="sideTitle" style="color: #0000cc; margin-top: 0;"></h3>
-            <div id="sideMeta" style="color: #666; font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 10px;"></div>
-            
-            <div id="historyLoading" class="history-loading">
-                ⏳ 正在啟動背景爬蟲，即時抓取歷審紀錄，請稍候約 5-10 秒...
+        <!-- 右側：🤖 AI 智慧分析助理側邊欄 -->
+        <div class="ai-sidebar">
+            <div class="chat-card">
+                <div class="chat-header">
+                    <h4>🤖 裁判書 AI 智慧分析助理</h4>
+                    <button class="chat-clear-btn" type="button" onclick="clearChatMessages()">清空對話</button>
+                </div>
+                <div id="chatMessages" class="chat-messages">
+                    <div class="chat-bubble-row bot">
+                        <div class="chat-avatar bot-avatar">AI</div>
+                        <div class="chat-bubble bot-bubble">
+                            你好！我是裁判書分析助理。請先在左側搜尋結果中<strong>勾選</strong>你想分析的案件，然後對我提問（例如：「這幾件詐欺案的被告大多判刑多久？」）。
+                        </div>
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <input type="text" id="chatInput" placeholder="請輸入對勾選案件的提問..." onkeydown="handleChatKeyDown(event)">
+                    <button id="chatSendBtn" class="chat-send-btn" onclick="sendChatMessage()">發送</button>
+                </div>
             </div>
-            <div id="sideHistory" class="history-box" style="display: none;"></div>
-
-            <div id="sideBody" style="white-space: pre-wrap; font-size: 1.05em; line-height: 1.8; color: #222; margin-top: 15px;"></div>
         </div>
+
     </div>
 
     <script>
@@ -481,6 +475,14 @@
             document.getElementById('sidePanel').style.display = "none"; 
         }
 
+        // 新增：全選/取消全選
+        function toggleSelectAll(source) {
+            const checkboxes = document.querySelectorAll('.judgment-cb');
+            checkboxes.forEach(cb => {
+                cb.checked = source.checked;
+            });
+        }
+
         function renderTableBody(data) {
             const tbody = document.getElementById('resultTableBody');
             if (!tbody) return;
@@ -519,6 +521,7 @@
 
                 bodyHtml += `
                     <tr>
+                        <td style="text-align:center;"><input type="checkbox" class="judgment-cb" value="${item.id}"></td>
                         <td>${absoluteIndex}.</td>
                         <td>
                             <a class="result-title-link" onclick="showFullContent('${item.id}')">${titleWithSize}</a>
@@ -605,8 +608,9 @@
             html += `<table class="result-table">
                         <thead>
                             <tr>
-                                <th width="5%">序號</th>
-                                <th width="65%">裁判字號 (主文摘要)</th>
+                                <th width="4%" style="text-align:center;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)" title="全選/取消全選"></th>
+                                <th width="6%">序號</th>
+                                <th width="60%">裁判字號 (主文摘要)</th>
                                 <th width="15%">日期</th>
                                 <th width="15%">案由</th>
                             </tr>
@@ -686,7 +690,7 @@
                 <div class="chat-bubble-row bot">
                     <div class="chat-avatar bot-avatar">AI</div>
                     <div class="chat-bubble bot-bubble">
-                        對話記錄已清空。您可以繼續針對目前列表上的案件進行提問。
+                        對話記錄已清空。您可以繼續針對目前搜尋列表中的案件提出任何法律或統計問題。
                     </div>
                 </div>`;
 
@@ -727,10 +731,16 @@
 
             if (!question) return;
 
-            if (!judgmentsData || judgmentsData.length === 0) {
-                alert("目前畫面上沒有任何案件可以讓 AI 閱讀喔！請先確認搜尋條件。");
+            // 🛑 讀取所有被勾選的判決書
+            const checkedBoxes = document.querySelectorAll('.judgment-cb:checked');
+            if (checkedBoxes.length === 0) {
+                alert("請先在左側搜尋結果中「勾選」您想要讓 AI 分析的判決書！");
                 return;
             }
+
+            // 過濾出被勾選的案件完整資料
+            const selectedIds = Array.from(checkedBoxes).map(cb => cb.value);
+            const selectedJudgments = judgmentsData.filter(item => selectedIds.includes(item.id));
 
             appendChatMessage('user', escapeHtml(question));
             input.value = '';
@@ -741,11 +751,11 @@
                 <div class="chat-typing">
                     <span></span><span></span><span></span>
                 </div>
-                <span style="color:#64748b; font-size:0.88em; margin-left:4px;">AI 正在研讀搜尋結果並統整分析中...</span>
+                <span style="color:#64748b; font-size:0.88em; margin-left:4px;">AI 正在研讀您選取的 <strong>${selectedJudgments.length}</strong> 筆案件並統整分析中...</span>
             `);
 
-            // AI 將精準閱讀當下畫面上顯示的 10 筆資料
-            const contentsToSent = judgmentsData.map(item => {
+            // AI 將精準閱讀被勾選的資料
+            const contentsToSent = selectedJudgments.map(item => {
                 const idParts = item.id ? item.id.split(',') : [];
                 const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
                 const displayType = (item.case_type && item.case_type.trim() !== "") ? item.case_type : (idParts[2] || "");
@@ -764,7 +774,6 @@
             .then(res => res.json())
             .then(data => {
                 const botBubble = loadingRow.querySelector('.chat-bubble');
-                
                 let rawAnswer = "";
                 if (Array.isArray(data.answer)) {
                     rawAnswer = data.answer.map(item => item.text || "").join("\n");
@@ -773,7 +782,6 @@
                 } else {
                     rawAnswer = JSON.stringify(data.answer);
                 }
-
                 const formattedAnswer = rawAnswer.replace(/\n/g, '<br>');
                 botBubble.innerHTML = formattedAnswer;
             })

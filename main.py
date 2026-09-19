@@ -100,7 +100,6 @@ class JudgmentSearchQuery(BaseModel):
     adv_size_max: Optional[float] = None
 
 @app.post("/api/judgments")
-@app.post("/api/judgments")
 def get_judgments_from_db(query: JudgmentSearchQuery):
     conn = None
     try:
@@ -112,7 +111,7 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             # 基礎搜尋條件
             if query.court:
                 where_clauses.append("id LIKE %s")
-                # 🛑【修正 1】拿掉開頭的 %，讓 ID 欄位可以正常使用索引
+                # 🛑 拿掉開頭的 %，讓 ID 欄位可以正常使用索引
                 params.append(f"{query.court}%") 
             if query.start_date:
                 where_clauses.append("date >= %s")
@@ -187,8 +186,7 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
 
             where_sql = " WHERE " + " AND ".join(where_clauses)
 
-            # 1. 獲取符合條件的總筆數
-            # 🛑【修正 2】優化 COUNT 查詢，避免全表掃描，限制最多顯示 100 頁 (1000 筆)
+            # 1. 獲取符合條件的總筆數 (LIMIT 1000 避免全表掃描當機)
             count_sql = f"SELECT COUNT(*) as total FROM (SELECT 1 FROM judgments {where_sql} LIMIT 1000) as dummy"
             cursor.execute(count_sql, tuple(params))
             total_count = cursor.fetchone()['total']
@@ -201,9 +199,17 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             elif query.sort_type == "size_desc": order_clause = "ORDER BY CHAR_LENGTH(content) DESC"
             elif query.sort_type == "size_asc": order_clause = "ORDER BY CHAR_LENGTH(content) ASC"
 
+            # 🛑 智慧索引選擇：解決首頁卡死與排序寫入失敗
+            force_index = ""
+            if len(where_clauses) == 1 and query.sort_type in ["date_desc", "date_asc"]:
+                force_index = "FORCE INDEX (idx_date)"
+            elif query.year and len(where_clauses) == 2 and query.sort_type in ["date_desc", "date_asc"]:
+                force_index = "FORCE INDEX (idx_year_date)"
+
             limit = 10
             offset = (query.page - 1) * limit
-            data_sql = f"SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments {where_sql} {order_clause} LIMIT %s OFFSET %s"
+            
+            data_sql = f"SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments {force_index} {where_sql} {order_clause} LIMIT %s OFFSET %s"
             
             data_params = params + [limit, offset]
             cursor.execute(data_sql, tuple(data_params))
