@@ -167,11 +167,11 @@
 
     <script>
         let judgmentsData = [];
-        let currentFilteredData = [];
         let currentSearchKeywords = [];
-
         let currentPage = 1;
         const itemsPerPage = 10;
+        let totalItems = 0;
+        let currentSearchPayload = {};
 
         const courtMapping = {
             "TPS": "最高法院", "TPA": "最高行政法院", "TPC": "懲戒法院", "CPC": "司法院憲法法庭",
@@ -204,34 +204,24 @@
 
         function getCourtName(item) {
             if (!item) return "未知法院";
-
             const content = item.content || "";
             const firstLine = content.split('\n')[0] || "";
             const matchCourt = firstLine.match(/([^\s]+(?:法院|法庭))/);
-            if (matchCourt && matchCourt[1]) {
-                return matchCourt[1].trim();
-            }
+            if (matchCourt && matchCourt[1]) return matchCourt[1].trim();
 
             const id = item.id || "";
             const firstSegment = id.split(',')[0] || "";
             const prefix3 = firstSegment.substring(0, 3);
-            
             if (courtMapping[prefix3]) return courtMapping[prefix3];
             if (courtMapping[firstSegment]) return courtMapping[firstSegment];
-
             return prefix3 || "未知法院";
         }
 
         function getDocumentKind(item) {
             const content = item.content || "";
             const firstLine = content.split('\n')[0] || "";
-            
-            if (firstLine.includes("裁定") || content.includes("裁定如下") || firstLine.includes("支付命令")) {
-                return "裁定";
-            }
-            if (firstLine.includes("判決") || content.includes("判決如下")) {
-                return "判決";
-            }
+            if (firstLine.includes("裁定") || content.includes("裁定如下") || firstLine.includes("支付命令")) return "裁定";
+            if (firstLine.includes("判決") || content.includes("判決如下")) return "判決";
             return "裁判";
         }
 
@@ -286,7 +276,6 @@
 
         function generateHighlightedSnippet(text, keywords, maxLength = 110) {
             if (!text || text.trim() === "") return "";
-            
             let firstMatchIndex = -1;
             for (const kw of keywords) {
                 if (!kw) continue;
@@ -313,80 +302,38 @@
                 const regex = new RegExp(`(${safeKw})`, 'gi');
                 snippet = snippet.replace(regex, `<span class="highlight-kw">$1</span>`);
             }
-
             return snippet;
         }
 
-        function applySorting(data, sortType) {
-            const sorted = [...data];
-            sorted.sort((a, b) => {
-                const dateA = a.date ? parseInt(a.date.replace(/-/g, ''), 10) : 0;
-                const dateB = b.date ? parseInt(b.date.replace(/-/g, ''), 10) : 0;
-                const idPartsA = a.id ? a.id.split(',') : [];
-                const idPartsB = b.id ? b.id.split(',') : [];
-                const noA = parseInt((a.case_no && a.case_no.trim()) || idPartsA[3] || 0, 10);
-                const noB = parseInt((b.case_no && b.case_no.trim()) || idPartsB[3] || 0, 10);
-
-                const sizeA = (a.content || "").length;
-                const sizeB = (b.content || "").length;
-
-                switch (sortType) {
-                    case "date_asc":
-                        return dateA - dateB;
-                    case "no_desc":
-                        return noB - noA;
-                    case "no_asc":
-                        return noA - noB;
-                    case "size_desc":
-                        return sizeB - sizeA;
-                    case "size_asc":
-                        return sizeA - sizeB;
-                    case "date_desc":
-                    default:
-                        return dateB - dateA;
-                }
-            });
-            return sorted;
-        }
-
-        function handleSortChange(sortType) {
-            currentFilteredData = applySorting(currentFilteredData, sortType);
-            currentPage = 1;
-            renderTableBody(currentFilteredData);
+        function handleSortChange() {
+            fetchJudgments(1);
         }
 
         function resetSearch() {
             clearSearchError();
             currentSearchKeywords = [];
-
             document.getElementById('courtInput').value = "";
             document.getElementById('quickKeywordInput').value = "";
             document.querySelectorAll('input[name="caseCategory"]').forEach(cb => cb.checked = false);
             document.querySelector('input[name="docType"][value=""]').checked = true;
-            
             document.getElementById('advYear').value = "";
             document.getElementById('advCaseType').value = "";
             document.getElementById('advNoStart').value = "";
             document.getElementById('advNoEnd').value = "";
-            
             document.getElementById('startYear').value = "";
             document.getElementById('startMonth').value = "";
             document.getElementById('startDay').value = "";
             document.getElementById('endYear').value = "";
             document.getElementById('endMonth').value = "";
             document.getElementById('endDay').value = "";
-
             document.getElementById('advTitle').value = "";
             document.getElementById('advMainText').value = "";
             document.getElementById('advContent').value = "";
             document.getElementById('advSizeMin').value = "";
             document.getElementById('advSizeMax').value = "";
 
-            const sortSelect = document.getElementById('tableSortSelect');
-            const sortType = sortSelect ? sortSelect.value : "date_desc";
-            currentFilteredData = applySorting(judgmentsData, sortType);
-            currentPage = 1;
-            displayResults(currentFilteredData);
+            currentSearchPayload = {};
+            fetchJudgments(1);
             document.getElementById('sidePanel').style.display = "none";
         }
 
@@ -413,28 +360,40 @@
             return parseInt(`${fullYear}${fullMonth}${fullDay}`, 10);
         }
 
+        // 核心後端分頁抓取邏輯
+        async function fetchJudgments(page = 1) {
+            currentSearchPayload.page = page;
+            currentSearchPayload.sort_type = document.getElementById('tableSortSelect')?.value || "date_desc";
+
+            try {
+                document.getElementById('results').innerHTML = '<p>⏳ 正在從雲端資料庫搜尋中，請稍候...</p>';
+                
+                const response = await fetch('/api/judgments', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(currentSearchPayload)
+                });
+
+                if (!response.ok) throw new Error("伺服器回應錯誤");
+                
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+                
+                judgmentsData = data.data.filter(item => item && item.id && item.id.trim() !== "");
+                totalItems = data.total;
+                currentPage = page;
+                
+                displayResults();
+            } catch(e) {
+                console.error(e);
+                showSearchError(e.message);
+                document.getElementById('results').innerHTML = `<p style="color:red;">❌ 無法從資料庫載入裁判書資料，請確認連線狀態。</p>`;
+            }
+        }
+
         // 初次載入
-        fetch('/api/judgments', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
-        })
-        .then(response => {
-            if (!response.ok) throw new Error(`HTTP 錯誤: ${response.status}`);
-            return response.json();
-        })
-        .then(data => {
-            if (data.error) throw new Error(data.error);
-            const validData = data.filter(item => item && item.id && item.id.trim() !== "");
-            judgmentsData = validData;
-            currentFilteredData = applySorting(validData, "date_desc");
-            currentPage = 1; 
-            displayResults(currentFilteredData);
-        })
-        .catch(error => {
-            console.error("資料讀取失敗:", error);
-            document.getElementById('results').innerHTML = `<p style="color:red;">❌ 無法從資料庫載入裁判書資料，請確認後端伺服器與 Cloud SQL 連線設定。</p>`;
-        });
+        currentSearchPayload = {};
+        fetchJudgments(1);
 
         async function searchJudgments() {
             clearSearchError();
@@ -478,7 +437,7 @@
                     const y = parseInt(sY, 10) + 1911;
                     const m = sM ? sM.padStart(2, '0') : '01';
                     const d = sD ? sD.padStart(2, '0') : '01';
-                    backendStartDate = `${y}-${m}-${d}`;
+                    backendStartDate = `${y}${m}${d}`;
                 }
                 
                 if (eY || eM || eD) {
@@ -486,7 +445,7 @@
                     const y = parseInt(eY, 10) + 1911;
                     const m = eM ? eM.padStart(2, '0') : '12';
                     const d = eD ? eD.padStart(2, '0') : '31';
-                    backendEndDate = `${y}-${m}-${d}`;
+                    backendEndDate = `${y}${m}${d}`;
                 }
 
                 if (startDateInt && endDateInt && startDateInt > endDateInt) {
@@ -498,101 +457,27 @@
                 return;
             }
 
-            const searchPayload = {
+            const advSizeMin = document.getElementById('advSizeMin').value.trim();
+            const advSizeMax = document.getElementById('advSizeMax').value.trim();
+
+            currentSearchPayload = {
                 court: court,
                 start_date: backendStartDate,
                 end_date: backendEndDate,
                 keyword: quickKeyword,
                 year: advYear,
                 title_kw: advTitle,
-                content_kw: advContent
+                content_kw: advContent,
+                case_categories: checkedCategories,
+                doc_type: selectedDocType,
+                adv_case_type: advCaseType,
+                adv_no_start: advNoStart !== "" ? parseInt(advNoStart, 10) : null,
+                adv_no_end: advNoEnd !== "" ? parseInt(advNoEnd, 10) : null,
+                adv_size_min: advSizeMin !== "" ? parseFloat(advSizeMin) : null,
+                adv_size_max: advSizeMax !== "" ? parseFloat(advSizeMax) : null
             };
 
-            try {
-                document.getElementById('results').innerHTML = '<p>⏳ 正在從雲端資料庫搜尋中，請稍候...</p>';
-                
-                const response = await fetch('/api/judgments', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(searchPayload)
-                });
-
-                if (!response.ok) throw new Error("伺服器回應錯誤");
-                
-                const data = await response.json();
-                if (data.error) throw new Error(data.error);
-                
-                judgmentsData = data.filter(item => item && item.id && item.id.trim() !== "");
-
-            } catch(e) {
-                showSearchError(e.message);
-                document.getElementById('results').innerHTML = '';
-                return;
-            }
-
-            const sizeMinVal = document.getElementById('advSizeMin').value.trim();
-            const sizeMaxVal = document.getElementById('advSizeMax').value.trim();
-            const sizeMin = sizeMinVal !== "" ? parseFloat(sizeMinVal) : NaN;
-            const sizeMax = sizeMaxVal !== "" ? parseFloat(sizeMaxVal) : NaN;
-            const noStart = advNoStart !== "" ? parseInt(advNoStart, 10) : null;
-            const noEnd = advNoEnd !== "" ? parseInt(advNoEnd, 10) : null;
-
-            let filtered = judgmentsData.filter(item => {
-                const idParts = item.id ? item.id.split(',') : [];
-                const itemCourtCode = idParts[0] || ""; 
-                const itemCaseType = (item.case_type && item.case_type.trim()) || idParts[2] || "";
-                const itemCaseNo = (item.case_no && item.case_no.trim()) || idParts[3] || "";
-                const itemContent = item.content || "";
-                
-                if (selectedDocType !== "") {
-                    const kind = getDocumentKind(item);
-                    if (kind !== selectedDocType) return false;
-                }
-
-                if (checkedCategories.length > 0) {
-                    const courtTypeChar = itemCourtCode.length >= 4 ? itemCourtCode.charAt(3) : "";
-                    const firstLine = itemContent.split('\n')[0] || "";
-                    const isMatchedCategory = checkedCategories.some(cat => {
-                        if (cat === "刑事") return courtTypeChar === "M" || firstLine.includes("刑事") || ["訴", "簡", "易", "金重訴", "交易", "交簡"].includes(itemCaseType);
-                        if (cat === "民事") return courtTypeChar === "V" || courtTypeChar === "E" || firstLine.includes("民事") || firstLine.includes("支付命令") || ["司促", "司拍", "執事聲", "宜訴", "羅簡", "苗小", "苗簡", "壢小", "壢保險簡", "壢司他"].includes(itemCaseType);
-                        if (cat === "行政") return courtTypeChar === "A" || firstLine.includes("行政");
-                        if (cat === "憲法") return firstLine.includes("憲法");
-                        if (cat === "懲戒") return firstLine.includes("懲戒");
-                        return false;
-                    });
-                    if (!isMatchedCategory) return false;
-                }
-
-                if (advCaseType !== "" && !itemCaseType.includes(advCaseType)) return false;
-
-                if (noStart !== null) {
-                    const currentNo = parseInt(itemCaseNo, 10);
-                    if (isNaN(currentNo)) {
-                        if (!itemCaseNo.includes(String(noStart))) return false;
-                    } else {
-                        if (noEnd !== null) {
-                            if (currentNo < noStart || currentNo > noEnd) return false;
-                        } else {
-                            if (currentNo !== noStart) return false;
-                        }
-                    }
-                }
-
-                if (!isNaN(sizeMin) || !isNaN(sizeMax)) {
-                    const sizeKB = (itemContent.length * 2) / 1024;
-                    if (!isNaN(sizeMin) && sizeKB < sizeMin) return false;
-                    if (!isNaN(sizeMax) && sizeKB > sizeMax) return false;
-                }
-
-                return true;
-            });
-
-            const sortSelect = document.getElementById('tableSortSelect');
-            const sortType = sortSelect ? sortSelect.value : "date_desc";
-            currentFilteredData = applySorting(filtered, sortType);
-            
-            currentPage = 1; 
-            displayResults(currentFilteredData);
+            fetchJudgments(1);
             document.getElementById('sidePanel').style.display = "none"; 
         }
 
@@ -600,18 +485,11 @@
             const tbody = document.getElementById('resultTableBody');
             if (!tbody) return;
 
-            const totalItems = data.length;
             const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
-            
-            if (currentPage < 1) currentPage = 1;
-            if (currentPage > totalPages) currentPage = totalPages;
-
             const startIndex = (currentPage - 1) * itemsPerPage;
-            const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
-            const paginatedData = data.slice(startIndex, endIndex);
 
             let bodyHtml = "";
-            paginatedData.forEach((item, index) => {
+            data.forEach((item, index) => {
                 const absoluteIndex = startIndex + index + 1;
                 const idParts = item.id ? item.id.split(',') : [];
                 const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
@@ -663,7 +541,7 @@
                 document.getElementById('results').appendChild(paginationDiv);
             }
 
-            if (currentFilteredData.length === 0) {
+            if (judgmentsData.length === 0) {
                 paginationDiv.innerHTML = "";
                 return;
             }
@@ -676,15 +554,22 @@
         }
 
         function changePage(delta) {
-            currentPage += delta;
-            renderTableBody(currentFilteredData);
-            document.querySelector('.table-toolbar').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+            let newPage = currentPage + delta;
+            if (newPage < 1) newPage = 1;
+            if (newPage > totalPages) newPage = totalPages;
+            
+            if (newPage !== currentPage) {
+                fetchJudgments(newPage).then(() => {
+                    document.querySelector('.search-box').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+            }
         }
 
-        function displayResults(data) {
+        function displayResults() {
             const resultsDiv = document.getElementById('results');
             
-            if (data.length === 0) {
+            if (judgmentsData.length === 0) {
                 resultsDiv.innerHTML = `
                     <div style="background: #fff3e0; border: 1px solid #ffe0b2; padding: 25px; border-radius: 6px; text-align: center; margin-top: 10px;">
                         <h4 style="color: #e65100; margin-top: 0;">🔍 查無符合條件的裁判書</h4>
@@ -703,10 +588,10 @@
 
             let html = `
                 <div class="table-toolbar">
-                    <span>共 <strong>${data.length}</strong> 筆符合條件</span>
+                    <span>共 <strong>${totalItems}</strong> 筆符合條件</span>
                     <div>
                         <label for="tableSortSelect">排序方式：</label>
-                        <select id="tableSortSelect" class="sort-select" onchange="handleSortChange(this.value)">
+                        <select id="tableSortSelect" class="sort-select" onchange="handleSortChange()">
                             <option value="date_desc" ${currentSortVal === 'date_desc' ? 'selected' : ''}>裁判日期 (新到舊)</option>
                             <option value="date_asc" ${currentSortVal === 'date_asc' ? 'selected' : ''}>裁判日期 (舊到新)</option>
                             <option value="no_desc" ${currentSortVal === 'no_desc' ? 'selected' : ''}>裁判案號 (大到小)</option>
@@ -730,7 +615,7 @@
                      </table>`;
             
             resultsDiv.innerHTML = html;
-            renderTableBody(data);
+            renderTableBody(judgmentsData);
         }
 
         function showFullContent(id) {
@@ -842,7 +727,7 @@
 
             if (!question) return;
 
-            if (!currentFilteredData || currentFilteredData.length === 0) {
+            if (!judgmentsData || judgmentsData.length === 0) {
                 alert("目前畫面上沒有任何案件可以讓 AI 閱讀喔！請先確認搜尋條件。");
                 return;
             }
@@ -859,9 +744,8 @@
                 <span style="color:#64748b; font-size:0.88em; margin-left:4px;">AI 正在研讀搜尋結果並統整分析中...</span>
             `);
 
-            // 💡 配合本機 8B 模型 Context 長度，傳送前 5 筆摘要給後端處理
-            const maxCasesToAnalyze = 30;
-            const contentsToSent = currentFilteredData.slice(0, maxCasesToAnalyze).map(item => {
+            // AI 將精準閱讀當下畫面上顯示的 10 筆資料
+            const contentsToSent = judgmentsData.map(item => {
                 const idParts = item.id ? item.id.split(',') : [];
                 const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
                 const displayType = (item.case_type && item.case_type.trim() !== "") ? item.case_type : (idParts[2] || "");
