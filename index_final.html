@@ -681,11 +681,11 @@
                 historyBox.innerHTML = "<span style='color:red;'>歷審爬蟲暫時無法取得資料，請確認司法院網站連線狀態。</span>";
                 historyBox.style.display = "block";
             });
-            function closeSidePanel() {
+            
+        }
+        function closeSidePanel() {
             document.getElementById('sidePanel').style.display = 'none';
         }
-        }
-
         // 🤖 聊天機器人
         function handleChatKeyDown(event) {
             if (event.key === 'Enter') {
