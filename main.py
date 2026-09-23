@@ -67,7 +67,7 @@ def get_db_connection():
         )
 
 # ==========================================
-# 1. 靜態檔案與資料庫資料 API (加入完整後端分頁與過濾)
+# 1. 靜態檔案與資料庫資料 API 
 # ==========================================
 @app.get("/")
 def read_index():
@@ -111,19 +111,18 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             # 基礎搜尋條件
             if query.court:
                 where_clauses.append("id LIKE %s")
-                # 🛑 拿掉開頭的 %，讓 ID 欄位可以正常使用索引
                 params.append(f"{query.court}%") 
             if query.start_date:
                 where_clauses.append("date >= %s")
                 sd = query.start_date.replace('-', '')
-                if len(sd) == 8: # 確保長度是 YYYYMMDD
+                if len(sd) == 8: 
                     sd = f"{sd[:4]}-{sd[4:6]}-{sd[6:8]}"
                 params.append(sd)
                 
             if query.end_date:
                 where_clauses.append("date <= %s")
                 ed = query.end_date.replace('-', '')
-                if len(ed) == 8: # 確保長度是 YYYYMMDD
+                if len(ed) == 8: 
                     ed = f"{ed[:4]}-{ed[4:6]}-{ed[6:8]}"
                 params.append(ed)
             if query.year:
@@ -139,10 +138,42 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                 for kw in query.title_kw.split():
                     where_clauses.append("title LIKE %s")
                     params.append(f"%{kw}%")
+                    
+            # 🛑 全文內容 (支援進階語法：+, -, &, ())
             if query.content_kw:
-                for kw in query.content_kw.split():
-                    where_clauses.append("content LIKE %s")
-                    params.append(f"%{kw}%")
+                s = query.content_kw.replace('+', ' + ').replace('-', ' - ').replace('&', ' & ').replace('(', ' ( ').replace(')', ' ) ')
+                tokens = [t for t in s.split() if t.strip()]
+                
+                content_sql = []
+                for i, token in enumerate(tokens):
+                    if token == '+':
+                        content_sql.append("OR")
+                    elif token == '&':
+                        content_sql.append("AND")
+                    elif token == '-':
+                        if not content_sql or content_sql[-1] == '(':
+                            content_sql.append("NOT")
+                        else:
+                            content_sql.append("AND NOT")
+                    elif token == '(':
+                        if i > 0 and tokens[i-1] not in ['+', '&', '-', '(']:
+                            content_sql.append("AND")
+                        content_sql.append("(")
+                    elif token == ')':
+                        content_sql.append(")")
+                    else:
+                        if i > 0 and tokens[i-1] not in ['+', '&', '-', '(']:
+                            content_sql.append("AND")
+                        content_sql.append("content LIKE %s")
+                        params.append(f"%{token}%")
+                
+                opens = content_sql.count('(')
+                closes = content_sql.count(')')
+                if opens > closes:
+                    content_sql.extend([")"] * (opens - closes))
+                
+                if content_sql:
+                    where_clauses.append(f"({' '.join(content_sql)})")
 
             # 裁判書類別
             if query.doc_type == "判決":
@@ -186,7 +217,7 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
 
             where_sql = " WHERE " + " AND ".join(where_clauses)
 
-            # 1. 獲取符合條件的總筆數 (LIMIT 1000 避免全表掃描當機)
+            # 1. 獲取符合條件的總筆數
             count_sql = f"SELECT COUNT(*) as total FROM (SELECT 1 FROM judgments {where_sql} LIMIT 1000) as dummy"
             cursor.execute(count_sql, tuple(params))
             total_count = cursor.fetchone()['total']
@@ -199,7 +230,7 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             elif query.sort_type == "size_desc": order_clause = "ORDER BY CHAR_LENGTH(content) DESC"
             elif query.sort_type == "size_asc": order_clause = "ORDER BY CHAR_LENGTH(content) ASC"
 
-            # 🛑 智慧索引選擇：解決首頁卡死與排序寫入失敗
+            # 智慧索引選擇
             force_index = ""
             if len(where_clauses) == 1 and query.sort_type in ["date_desc", "date_asc"]:
                 force_index = "FORCE INDEX (idx_date)"

@@ -95,7 +95,14 @@
                 <tr>
                     <td class="adv-label">全文內容</td>
                     <td>
-                        <input type="text" id="advContent" class="input-wide" placeholder="多關鍵字以空格分開，如：洗錢 帳戶 自白">
+                        <input type="text" id="advContent" class="input-wide" placeholder="如：(法院+管轄)&公證處-撤銷">
+                        <div style="font-size: 0.85em; color: #555; margin-top: 6px; line-height: 1.4;">
+                            💡 <strong>進階檢索語法：</strong> 
+                            <code>+</code> (或) &nbsp;|&nbsp; 
+                            <code>-</code> (不含) &nbsp;|&nbsp; 
+                            <code>&amp;</code> (且) &nbsp;|&nbsp; 
+                            <code>()</code> (群組組合)
+                        </div>
                     </td>
                 </tr>
                 <tr>
@@ -265,7 +272,9 @@
 
         function parseKeywords(inputStr) {
             if (!inputStr) return [];
-            return inputStr.trim().split(/[\s ]+/).filter(k => k.length > 0);
+            // 🛑 新增：將進階語法的特殊符號替換成空白，以便精準抓取純文字進行高亮
+            const cleanStr = inputStr.replace(/[+\-&()]/g, ' ');
+            return cleanStr.trim().split(/[\s ]+/).filter(k => k.length > 0);
         }
 
         function generateHighlightedSnippet(text, keywords, maxLength = 110) {
@@ -475,7 +484,7 @@
             document.getElementById('sidePanel').style.display = "none"; 
         }
 
-        // 新增：全選/取消全選
+        // 全選/取消全選
         function toggleSelectAll(source) {
             const checkboxes = document.querySelectorAll('.judgment-cb');
             checkboxes.forEach(cb => {
