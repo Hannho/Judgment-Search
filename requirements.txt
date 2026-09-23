@@ -1,10 +1,12 @@
 fastapi
-uvicorn[standard]
+uvicorn
 pydantic
+pymysql
 python-dotenv
 selenium
 webdriver-manager
-langchain-google-genai
 langchain-core
-requests
-pymysql
+langchain-ollama
+langchain-text-splitters
+langchain-community
+faiss-cpu

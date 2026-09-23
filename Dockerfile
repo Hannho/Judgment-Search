@@ -1,7 +1,5 @@
-# 使用官方輕量版 Python 映像檔
-FROM python:3.9-slim
+FROM python:3.11-slim
 
-# 💡 新增：安裝系統必備套件、Chromium 瀏覽器與 ChromeDriver
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -10,18 +8,13 @@ RUN apt-get update && apt-get install -y \
     chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
-# 設定工作目錄
 WORKDIR /app
 
-# 複製並安裝 Python 套件
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 複製所有專案檔案到容器中
 COPY . .
 
-# 讓 Cloud Run 能夠正確監聽環境變數指定的 Port
 ENV PORT=8080
 
-# 啟動 FastAPI
-CMD exec uvicorn main:app --host 0.0.0.0 --port ${PORT}
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
