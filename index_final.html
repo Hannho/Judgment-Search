@@ -129,6 +129,7 @@
 
                 <!-- 右側彈出/下方：判決書詳情與歷審紀錄 -->
                 <div id="sidePanel" class="detail-panel">
+                    <button class="close-panel-btn" onclick="closeSidePanel()" title="關閉全文">✖</button>
                     <h3 id="sideTitle" style="color: #0000cc; margin-top: 0;"></h3>
                     <div id="sideMeta" style="color: #666; font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 10px;"></div>
                     
@@ -680,6 +681,9 @@
                 historyBox.innerHTML = "<span style='color:red;'>歷審爬蟲暫時無法取得資料，請確認司法院網站連線狀態。</span>";
                 historyBox.style.display = "block";
             });
+            function closeSidePanel() {
+            document.getElementById('sidePanel').style.display = 'none';
+        }
         }
 
         // 🤖 聊天機器人
