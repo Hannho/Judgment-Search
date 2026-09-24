@@ -127,16 +127,15 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                     ed = f"{ed[:4]}-{ed[4:6]}-{ed[6:8]}"
                 params.append(ed)
             
-            # 年份過濾 (支援「其他年度」的條件轉換)
+            # 🛑 年份過濾：改回使用已建立索引的 year 欄位，秒殺 500 Timeout 錯誤
             if query.year:
                 if query.year == "其他年度":
                     current_roc_year = datetime.datetime.now().year - 1911
-                    # 搜尋年份小於前年的案件
-                    where_clauses.append("CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(id, ',', 2), ',', -1) AS UNSIGNED) <= %s")
+                    where_clauses.append("(CAST(year AS UNSIGNED) <= %s OR year IS NULL OR year = '')")
                     params.append(current_roc_year - 3)
                 else:
-                    where_clauses.append("id LIKE %s")
-                    params.append(f"%,{query.year},%")
+                    where_clauses.append("year = %s")
+                    params.append(query.year)
             
             # 關鍵字條件
             if query.keyword:
@@ -148,7 +147,7 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                     where_clauses.append("title LIKE %s")
                     params.append(f"%{kw}%")
                     
-            # 全文內容 (支援進階語法：+, -, &, ())
+            # 全文內容 (支援進階語法)
             if query.content_kw:
                 s = query.content_kw.replace('+', ' + ').replace('-', ' - ').replace('&', ' & ').replace('(', ' ( ').replace(')', ' ) ')
                 tokens = [t for t in s.split() if t.strip()]
@@ -207,7 +206,7 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                 if cat_conditions:
                     where_clauses.append("(" + " OR ".join(cat_conditions) + ")")
 
-            # 進階案號與大小過濾
+            # 進階過濾
             if query.adv_case_type:
                 where_clauses.append("case_type LIKE %s")
                 params.append(f"%{query.adv_case_type}%")
@@ -227,13 +226,15 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             where_sql = " WHERE " + " AND ".join(where_clauses)
 
             # ==============================================================
-            # 1. 中間列表總筆數：嚴格鎖定 LIMIT 1000，保護系統效能
+            # 1. 總筆數 (全庫精確統計)
             # ==============================================================
-            count_sql = f"SELECT COUNT(*) as total FROM (SELECT 1 FROM judgments {where_sql} LIMIT 1000) as dummy"
+            count_sql = f"SELECT COUNT(*) as total FROM judgments {where_sql}"
             cursor.execute(count_sql, tuple(params))
             total_count = cursor.fetchone()['total']
 
-            # 2. 依據分頁獲取當頁資料
+            # ==============================================================
+            # 2. 當頁資料 (使用 LIMIT 10 分頁，保護中間清單)
+            # ==============================================================
             order_clause = "ORDER BY date DESC"
             if query.sort_type == "date_asc": order_clause = "ORDER BY date ASC"
             elif query.sort_type == "no_desc": order_clause = "ORDER BY CAST(case_no AS UNSIGNED) DESC"
@@ -251,25 +252,24 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             offset = (query.page - 1) * limit
             
             data_sql = f"SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments {force_index} {where_sql} {order_clause} LIMIT %s OFFSET %s"
-            
             data_params = params + [limit, offset]
             cursor.execute(data_sql, tuple(data_params))
             results = cursor.fetchall()
 
             # ==============================================================
-            # 3. 左側選單統計 (Facets)：真實統計全庫數量 (不加 LIMIT)
+            # 3. 側邊欄過濾統計資料 Facets (全庫精確統計，極速版)
             # ==============================================================
             facets = {"courts": {}, "years": {}, "categories": {}}
             try:
-                # 統計年度：直接透過 SQL SUBSTRING_INDEX 從 ID 切出精準年份
+                # 🛑 統計年度：直接使用 year 欄位，秒殺完成分群
                 current_roc_year = datetime.datetime.now().year - 1911
-                year_sql = f"SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(id, ',', 2), ',', -1) as ext_year, COUNT(*) as count FROM judgments {where_sql} GROUP BY ext_year"
+                year_sql = f"SELECT year, COUNT(*) as count FROM judgments {where_sql} GROUP BY year"
                 cursor.execute(year_sql, tuple(params))
                 
                 y_stats = {f"今年 ({current_roc_year})": 0, f"去年 ({current_roc_year-1})": 0, f"前年 ({current_roc_year-2})": 0, "其他年度": 0}
                 
                 for row in cursor.fetchall():
-                    y_str = row["ext_year"]
+                    y_str = row["year"]
                     if y_str and str(y_str).strip().isdigit():
                         y = int(str(y_str).strip())
                         if y == current_roc_year:
@@ -280,6 +280,8 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                             y_stats[f"前年 ({current_roc_year-2})"] += row["count"]
                         else:
                             y_stats["其他年度"] += row["count"]
+                    else:
+                        y_stats["其他年度"] += row["count"]
                             
                 facets["years"] = {k: v for k, v in y_stats.items() if v > 0}
                 
