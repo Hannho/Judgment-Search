@@ -38,33 +38,23 @@ app.add_middleware(
 )
 
 # ==========================================
-# 0. 資料庫連線設定
+# 0. 資料庫連線設定 (修改為支援雲端連回本地端)
 # ==========================================
-DB_HOST = os.getenv("DB_HOST", "35.221.215.146")
+DB_HOST = os.getenv("DB_HOST", "127.0.0.1") # 部署到 GCP 時，請在環境變數設定您的 Ngrok TCP 網址或 Public IP
 DB_USER = os.getenv("DB_USER", "admin1")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "12345678")
 DB_NAME = os.getenv("DB_NAME", "judgment")         
-INSTANCE_CONNECTION_NAME = os.getenv("INSTANCE_CONNECTION_NAME", "judgmentsearch:asia-east1:judgment-search") 
 
 def get_db_connection():
-    if os.environ.get("K_SERVICE"):
-        return pymysql.connect(
-            unix_socket=f'/cloudsql/{INSTANCE_CONNECTION_NAME}',
-            user=DB_USER,
-            password=DB_PASSWORD,
-            database=DB_NAME,
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor
-        )
-    else:
-        return pymysql.connect(
-            host=DB_HOST,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            database=DB_NAME,
-            charset='utf8mb4',
-            cursorclass=pymysql.cursors.DictCursor
-        )
+    # 移除 K_SERVICE 判斷，永遠使用 TCP 連線以支援混合雲架構
+    return pymysql.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+        charset='utf8mb4',
+        cursorclass=pymysql.cursors.DictCursor
+    )
 
 # ==========================================
 # 1. 靜態檔案與資料庫資料 API 
@@ -181,16 +171,13 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             elif query.doc_type == "裁定":
                 where_clauses.append("(content LIKE '裁定%%' OR content LIKE '%%裁定如下%%' OR content LIKE '支付命令%%')")
 
-            # 案件類別
-# 案件類別
+            # 案件類別 (嚴格判斷)
             if query.case_categories:
                 cat_conditions = []
                 for cat in query.case_categories:
                     if cat == "刑事":
-                        # 移除 case_type 的寬鬆判斷，嚴格要求 ID 含 M 或內文包含刑事關鍵字
                         cat_conditions.append("(id LIKE '___M%%' OR content LIKE '%%刑事判決%%' OR content LIKE '%%刑事裁定%%' OR content LIKE '%%刑事簡易判決%%')")
                     elif cat == "民事":
-                        # 嚴格要求 ID 含 V/E 或內文包含民事關鍵字
                         cat_conditions.append("(id LIKE '___V%%' OR id LIKE '___E%%' OR content LIKE '%%民事判決%%' OR content LIKE '%%民事裁定%%' OR content LIKE '%%支付命令%%')")
                     elif cat == "行政":
                         cat_conditions.append("(id LIKE '___A%%' OR content LIKE '%%行政判決%%' OR content LIKE '%%行政裁定%%')")
@@ -200,6 +187,7 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                         cat_conditions.append("(content LIKE '%%懲戒法院%%' OR content LIKE '%%懲戒判決%%')")
                 if cat_conditions:
                     where_clauses.append("(" + " OR ".join(cat_conditions) + ")")
+
             # 進階案號與大小過濾
             if query.adv_case_type:
                 where_clauses.append("case_type LIKE %s")
@@ -232,7 +220,6 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             elif query.sort_type == "size_desc": order_clause = "ORDER BY CHAR_LENGTH(content) DESC"
             elif query.sort_type == "size_asc": order_clause = "ORDER BY CHAR_LENGTH(content) ASC"
 
-            # 智慧索引選擇
             force_index = ""
             if len(where_clauses) == 1 and query.sort_type in ["date_desc", "date_asc"]:
                 force_index = "FORCE INDEX (idx_date)"
@@ -248,7 +235,35 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             cursor.execute(data_sql, tuple(data_params))
             results = cursor.fetchall()
             
-        return {"total": total_count, "data": results}
+            # 3. 獲取側邊欄過濾統計資料 (Facets)
+            facets = {"courts": {}, "years": {}, "categories": {}}
+            try:
+                # 統計年度
+                year_sql = f"SELECT year, COUNT(*) as count FROM (SELECT year FROM judgments {where_sql} LIMIT 1000) as dummy GROUP BY year ORDER BY year DESC"
+                cursor.execute(year_sql, tuple(params))
+                for row in cursor.fetchall():
+                    if row["year"] and row["year"].strip():
+                        facets["years"][row["year"]] = row["count"]
+                
+                # 統計法院
+                court_sql = f"SELECT SUBSTRING(id, 1, 3) as court, COUNT(*) as count FROM (SELECT id FROM judgments {where_sql} LIMIT 1000) as dummy GROUP BY SUBSTRING(id, 1, 3)"
+                cursor.execute(court_sql, tuple(params))
+                for row in cursor.fetchall():
+                    if row["court"]:
+                        facets["courts"][row["court"]] = row["count"]
+                        
+                # 統計案件類別
+                cat_sql = f"SELECT SUBSTRING(id, 4, 1) as cat, COUNT(*) as count FROM (SELECT id FROM judgments {where_sql} LIMIT 1000) as dummy GROUP BY SUBSTRING(id, 4, 1)"
+                cursor.execute(cat_sql, tuple(params))
+                cat_map = {"M": "刑事", "V": "民事", "E": "民事", "A": "行政", "P": "懲戒", "S": "憲法"}
+                for row in cursor.fetchall():
+                    c_name = cat_map.get(row["cat"])
+                    if c_name:
+                        facets["categories"][c_name] = facets["categories"].get(c_name, 0) + row["count"]
+            except Exception as e:
+                print(f"統計資料抓取失敗: {e}")
+            
+        return {"total": total_count, "data": results, "facets": facets}
     except Exception as e:
         error_msg = f"❌ 資料庫讀取失敗: {str(e)}"
         print(error_msg)
