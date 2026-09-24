@@ -200,19 +200,21 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             where_sql = " WHERE " + " AND ".join(where_clauses)
 
             # ==============================================================
-            # 1. 總筆數 (智慧切換：空條件查 Schema，有條件套用 50000 筆安全鎖)
+            # 1. 總筆數 (全庫精準真實統計)
             # ==============================================================
             if len(where_clauses) == 1:
+                # 無搜尋條件時利用 schema 快速預估，避免首頁載入卡頓
                 cursor.execute("SELECT table_rows as total FROM information_schema.tables WHERE table_schema = %s AND table_name = 'judgments'", (DB_NAME,))
                 schema_res = cursor.fetchone()
                 total_count = schema_res['total'] if schema_res and schema_res['total'] else 1234303
             else:
-                count_sql = f"SELECT COUNT(*) as total FROM (SELECT 1 FROM judgments {where_sql} LIMIT 50000) as dummy"
+                # 🚨 拿掉所有 LIMIT，直接用 SQL 原生 COUNT 高速計算全庫符合條件的數量
+                count_sql = f"SELECT COUNT(1) as total FROM judgments {where_sql}"
                 cursor.execute(count_sql, tuple(params))
                 total_count = cursor.fetchone()['total']
 
             # ==============================================================
-            # 2. 當頁資料 (分頁)
+            # 2. 當頁資料 (使用 LIMIT 10 分頁，保護中間清單不超載)
             # ==============================================================
             order_clause = "ORDER BY date DESC"
             if query.sort_type == "date_asc": order_clause = "ORDER BY date ASC"
@@ -236,45 +238,45 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             results = cursor.fetchall()
 
             # ==============================================================
-            # 3. 側邊欄過濾統計資料 Facets (極速內存分群版)
+            # 3. 側邊欄 Facets 過濾統計 (全庫精準真實統計)
             # ==============================================================
             facets = {"courts": {}, "years": {}, "categories": {}}
             try:
-                # 🚨 效能救星：撈出最多 5 萬筆 ID 回 Python 解析，避免 MySQL 崩潰
-                facet_sql = f"SELECT id FROM judgments {force_index} {where_sql} LIMIT 50000"
-                cursor.execute(facet_sql, tuple(params))
-                all_ids = cursor.fetchall()
-                
+                # 🚨 重大修正：移除會造成當機的 ORDER BY 與 LIMIT，直接用極速 GROUP BY 計算全庫
                 current_roc_year = datetime.datetime.now().year - 1911
-                y_stats = {f"今年 ({current_roc_year})": 0, f"去年 ({current_roc_year-1})": 0, f"前年 ({current_roc_year-2})": 0, "其他年度": 0}
-                cat_map = {"M": "刑事", "V": "民事", "E": "民事", "A": "行政", "P": "懲戒", "S": "憲法"}
                 
-                for row in all_ids:
-                    case_id = row['id']
-                    if not case_id: continue
-                    parts = case_id.split(',')
-                    
-                    # 統計法院
-                    court_code = case_id[:3]
-                    facets["courts"][court_code] = facets["courts"].get(court_code, 0) + 1
-                    
-                    # 統計案件類別
-                    cat_char = case_id[3:4] if len(case_id) >= 4 else ""
-                    c_name = cat_map.get(cat_char)
-                    if c_name:
-                        facets["categories"][c_name] = facets["categories"].get(c_name, 0) + 1
-                        
-                    # 統計年度
-                    if len(parts) >= 2 and parts[1].strip().isdigit():
-                        y = int(parts[1].strip())
-                        if y == current_roc_year: y_stats[f"今年 ({current_roc_year})"] += 1
-                        elif y == current_roc_year - 1: y_stats[f"去年 ({current_roc_year-1})"] += 1
-                        elif y == current_roc_year - 2: y_stats[f"前年 ({current_roc_year-2})"] += 1
-                        else: y_stats["其他年度"] += 1
+                # 統計年度
+                year_sql = f"SELECT year, COUNT(1) as count FROM judgments {where_sql} GROUP BY year"
+                cursor.execute(year_sql, tuple(params))
+                
+                y_stats = {f"今年 ({current_roc_year})": 0, f"去年 ({current_roc_year-1})": 0, f"前年 ({current_roc_year-2})": 0, "其他年度": 0}
+                for row in cursor.fetchall():
+                    y_str = row["year"]
+                    if y_str and str(y_str).strip().isdigit():
+                        y = int(str(y_str).strip())
+                        if y == current_roc_year: y_stats[f"今年 ({current_roc_year})"] += row["count"]
+                        elif y == current_roc_year - 1: y_stats[f"去年 ({current_roc_year-1})"] += row["count"]
+                        elif y == current_roc_year - 2: y_stats[f"前年 ({current_roc_year-2})"] += row["count"]
+                        else: y_stats["其他年度"] += row["count"]
                     else:
-                        y_stats["其他年度"] += 1
-                        
+                        y_stats["其他年度"] += row["count"]
                 facets["years"] = {k: v for k, v in y_stats.items() if v > 0}
+                
+                # 統計法院
+                court_sql = f"SELECT SUBSTRING(id, 1, 3) as court, COUNT(1) as count FROM judgments {where_sql} GROUP BY SUBSTRING(id, 1, 3)"
+                cursor.execute(court_sql, tuple(params))
+                for row in cursor.fetchall():
+                    if row["court"]:
+                        facets["courts"][row["court"]] = row["count"]
+                        
+                # 統計案件類別
+                cat_sql = f"SELECT SUBSTRING(id, 4, 1) as cat, COUNT(1) as count FROM judgments {where_sql} GROUP BY SUBSTRING(id, 4, 1)"
+                cursor.execute(cat_sql, tuple(params))
+                cat_map = {"M": "刑事", "V": "民事", "E": "民事", "A": "行政", "P": "懲戒", "S": "憲法"}
+                for row in cursor.fetchall():
+                    c_name = cat_map.get(row["cat"])
+                    if c_name:
+                        facets["categories"][c_name] = facets["categories"].get(c_name, 0) + row["count"]
             except Exception as e:
                 print(f"統計資料抓取失敗: {e}")
             
