@@ -40,11 +40,11 @@ app.add_middleware(
 # ==========================================
 # 0. 資料庫連線設定 (支援混合雲架構與自訂 Port)
 # ==========================================
-DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = int(os.getenv("DB_PORT", 3306)) # 支援外部自訂 Port
+DB_HOST = os.getenv("DB_HOST", "35.221.215.146")
 DB_USER = os.getenv("DB_USER", "admin1")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "12345678")
 DB_NAME = os.getenv("DB_NAME", "judgment")         
+INSTANCE_CONNECTION_NAME = os.getenv("INSTANCE_CONNECTION_NAME", "judgmentsearch:asia-east1:judgment-search")         
 
 def get_db_connection():
     # 移除 K_SERVICE 判斷，永遠使用 TCP 連線以支援 GCP 連回本地端
