@@ -12,6 +12,8 @@ body { font-family: "微軟正黑體", Arial, sans-serif; max-width: 1250px; mar
 .btn-reset { padding: 8px 14px; background: #888; color: white; border: none; cursor: pointer; border-radius: 4px; }
 .btn-reset:hover { background: #666; }
 
+.close-panel-btn {position: absolute ;top: 15px;right: 15px;background: #f1f3f5;border: 1px solid #ccc;color: #666;font-size: 1.1em;cursor: pointer;border-radius: 4px;padding: 2px 8px;transition: all 0.2s;}
+.close-panel-btn:hover {background: #ffebee;color: #d32f2f;border-color: #ef9a9a;}
 /* 錯誤/提示訊息條 */
 .alert-error { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; padding: 10px 15px; border-radius: 4px; margin-top: 12px; display: none; font-size: 0.9em; font-weight: bold; }
 
