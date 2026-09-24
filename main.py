@@ -182,22 +182,24 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                 where_clauses.append("(content LIKE '裁定%%' OR content LIKE '%%裁定如下%%' OR content LIKE '支付命令%%')")
 
             # 案件類別
+# 案件類別
             if query.case_categories:
                 cat_conditions = []
                 for cat in query.case_categories:
                     if cat == "刑事":
-                        cat_conditions.append("(id LIKE '___M%%' OR content LIKE '刑事%%' OR case_type IN ('訴', '簡', '易', '金重訴', '交易', '交簡'))")
+                        # 移除 case_type 的寬鬆判斷，嚴格要求 ID 含 M 或內文包含刑事關鍵字
+                        cat_conditions.append("(id LIKE '___M%%' OR content LIKE '%%刑事判決%%' OR content LIKE '%%刑事裁定%%' OR content LIKE '%%刑事簡易判決%%')")
                     elif cat == "民事":
-                        cat_conditions.append("(id LIKE '___V%%' OR id LIKE '___E%%' OR content LIKE '民事%%' OR content LIKE '支付命令%%' OR case_type IN ('司促', '司拍', '執事聲', '宜訴', '羅簡', '苗小', '苗簡', '壢小', '壢保險簡', '壢司他'))")
+                        # 嚴格要求 ID 含 V/E 或內文包含民事關鍵字
+                        cat_conditions.append("(id LIKE '___V%%' OR id LIKE '___E%%' OR content LIKE '%%民事判決%%' OR content LIKE '%%民事裁定%%' OR content LIKE '%%支付命令%%')")
                     elif cat == "行政":
-                        cat_conditions.append("(id LIKE '___A%%' OR content LIKE '行政%%')")
+                        cat_conditions.append("(id LIKE '___A%%' OR content LIKE '%%行政判決%%' OR content LIKE '%%行政裁定%%')")
                     elif cat == "憲法":
-                        cat_conditions.append("(content LIKE '憲法%%')")
+                        cat_conditions.append("(content LIKE '%%憲法法庭%%' OR content LIKE '%%憲法判決%%')")
                     elif cat == "懲戒":
-                        cat_conditions.append("(content LIKE '懲戒%%')")
+                        cat_conditions.append("(content LIKE '%%懲戒法院%%' OR content LIKE '%%懲戒判決%%')")
                 if cat_conditions:
                     where_clauses.append("(" + " OR ".join(cat_conditions) + ")")
-
             # 進階案號與大小過濾
             if query.adv_case_type:
                 where_clauses.append("case_type LIKE %s")
