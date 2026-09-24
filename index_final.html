@@ -561,7 +561,9 @@
             const tbody = document.getElementById('resultTableBody');
             if (!tbody) return;
 
-            const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+            // 🛑 鎖定列表最高只能以 1000 筆來計算總頁數 (最多 100 頁)
+            const displayTotal = Math.min(totalItems, 1000);
+            const totalPages = Math.ceil(displayTotal / itemsPerPage) || 1;
             const startIndex = (currentPage - 1) * itemsPerPage;
 
             let bodyHtml = "";
@@ -631,8 +633,11 @@
         }
 
         function changePage(delta) {
-            const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+            // 🛑 鎖定翻頁最高限制
+            const displayTotal = Math.min(totalItems, 1000);
+            const totalPages = Math.ceil(displayTotal / itemsPerPage) || 1;
             let newPage = currentPage + delta;
+            
             if (newPage < 1) newPage = 1;
             if (newPage > totalPages) newPage = totalPages;
             
@@ -663,9 +668,12 @@
 
             const currentSortVal = document.getElementById('tableSortSelect')?.value || "date_desc";
 
+            // 🛑 新增：超過 1000 筆時的文字提示
+            const limitWarning = totalItems > 1000 ? '<span style="color:#e65100; font-size:0.9em; margin-left: 8px;">(系統僅開放瀏覽前 1000 筆)</span>' : '';
+
             let html = `
                 <div class="table-toolbar">
-                    <span>共 <strong>${totalItems}</strong> 筆符合條件</span>
+                    <span>共 <strong>${totalItems}</strong> 筆符合條件 ${limitWarning}</span>
                     <div>
                         <label for="tableSortSelect">排序方式：</label>
                         <select id="tableSortSelect" class="sort-select" onchange="handleSortChange()">
@@ -890,7 +898,7 @@
                 "'": '&#039;'
             };
             return text.replace(/[&<>"']/g, m => map[m]);
-        }
+        }   
     </script>
 </body>
 </html>
