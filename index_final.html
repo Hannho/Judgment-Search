@@ -417,16 +417,11 @@
                     actualYear = value.split('(')[1].replace(')', '');
                 }
                 document.getElementById('advYear').value = actualYear;
-                if (document.getElementById('advancedPanel').style.display === 'none') {
-                    toggleAdvancedSearch(); 
-                }
             } else if (type === 'category') {
                 const checkboxes = document.querySelectorAll('input[name="caseCategory"]');
                 checkboxes.forEach(cb => { cb.checked = (cb.value === value); });
-                if (document.getElementById('advancedPanel').style.display === 'none') {
-                    toggleAdvancedSearch();
-                }
             }
+            // 套用條件後直接搜尋，畫面不亂跳
             searchJudgments();
         }
 

@@ -242,11 +242,14 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             elif query.sort_type == "size_desc": order_clause = "ORDER BY CHAR_LENGTH(content) DESC"
             elif query.sort_type == "size_asc": order_clause = "ORDER BY CHAR_LENGTH(content) ASC"
 
+            # 智慧索引選擇：根據你資料庫實際擁有的索引來動態調整
             force_index = ""
             if len(where_clauses) == 1 and query.sort_type in ["date_desc", "date_asc"]:
+                # 如果只有全域時間排序，使用 idx_date
                 force_index = "FORCE INDEX (idx_date)"
             elif query.year and len(where_clauses) == 2 and query.sort_type in ["date_desc", "date_asc"]:
-                force_index = "FORCE INDEX (idx_year_date)"
+                # 🛑 這裡改成使用你資料庫裡確實存在的 idx_year
+                force_index = "FORCE INDEX (idx_year)"
 
             limit = 10
             offset = (query.page - 1) * limit
