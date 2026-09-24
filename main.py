@@ -127,15 +127,10 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                     ed = f"{ed[:4]}-{ed[4:6]}-{ed[6:8]}"
                 params.append(ed)
             
-            # 🛑 年份過濾 (支援「其他年度」的模糊條件)
+            # 年份過濾
             if query.year:
-                if query.year == "其他年度":
-                    current_roc_year = datetime.datetime.now().year - 1911
-                    where_clauses.append("CAST(year AS UNSIGNED) <= %s")
-                    params.append(current_roc_year - 3)
-                else:
-                    where_clauses.append("year = %s")
-                    params.append(query.year)
+                where_clauses.append("id LIKE %s")
+                params.append(f"%,{query.year},%")
             
             # 關鍵字條件
             if query.keyword:
@@ -189,7 +184,7 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             elif query.doc_type == "裁定":
                 where_clauses.append("(content LIKE '裁定%%' OR content LIKE '%%裁定如下%%' OR content LIKE '支付命令%%')")
 
-            # 案件類別 (嚴格精準過濾)
+            # 案件類別
             if query.case_categories:
                 cat_conditions = []
                 for cat in query.case_categories:
@@ -225,8 +220,8 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
 
             where_sql = " WHERE " + " AND ".join(where_clauses)
 
-            # 1. 獲取符合條件的總筆數
-            count_sql = f"SELECT COUNT(*) as total FROM (SELECT 1 FROM judgments {where_sql} LIMIT 1000) as dummy"
+            # 1. 獲取符合條件的總筆數 (🚨 移除 LIMIT，真實統計全庫數量)
+            count_sql = f"SELECT COUNT(*) as total FROM judgments {where_sql}"
             cursor.execute(count_sql, tuple(params))
             total_count = cursor.fetchone()['total']
 
@@ -253,18 +248,18 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             cursor.execute(data_sql, tuple(data_params))
             results = cursor.fetchall()
 
-            # 3. 獲取側邊欄過濾統計資料 (Facets)
+            # 3. 獲取側邊欄過濾統計資料 (Facets) (🚨 全庫統計)
             facets = {"courts": {}, "years": {}, "categories": {}}
             try:
-                # 🛑 動態計算與歸納年份
+                # 🛑 解決年份失準：直接透過 SQL 的 SUBSTRING_INDEX 從 id 欄位 (例如 TPDM,115,...) 切割出準確的年份
                 current_roc_year = datetime.datetime.now().year - 1911
-                year_sql = f"SELECT year, COUNT(*) as count FROM (SELECT year FROM judgments {where_sql} LIMIT 1000) as dummy GROUP BY year"
+                year_sql = f"SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(id, ',', 2), ',', -1) as ext_year, COUNT(*) as count FROM judgments {where_sql} GROUP BY ext_year"
                 cursor.execute(year_sql, tuple(params))
                 
                 y_stats = {f"今年 ({current_roc_year})": 0, f"去年 ({current_roc_year-1})": 0, f"前年 ({current_roc_year-2})": 0, "其他年度": 0}
                 
                 for row in cursor.fetchall():
-                    y_str = row["year"]
+                    y_str = row["ext_year"]
                     if y_str and str(y_str).strip().isdigit():
                         y = int(str(y_str).strip())
                         if y == current_roc_year:
@@ -276,18 +271,17 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                         else:
                             y_stats["其他年度"] += row["count"]
                             
-                # 過濾掉 0 筆的年份分類，保持畫面清爽
                 facets["years"] = {k: v for k, v in y_stats.items() if v > 0}
                 
                 # 統計法院
-                court_sql = f"SELECT SUBSTRING(id, 1, 3) as court, COUNT(*) as count FROM (SELECT id FROM judgments {where_sql} LIMIT 1000) as dummy GROUP BY SUBSTRING(id, 1, 3)"
+                court_sql = f"SELECT SUBSTRING(id, 1, 3) as court, COUNT(*) as count FROM judgments {where_sql} GROUP BY SUBSTRING(id, 1, 3)"
                 cursor.execute(court_sql, tuple(params))
                 for row in cursor.fetchall():
                     if row["court"]:
                         facets["courts"][row["court"]] = row["count"]
                         
                 # 統計案件類別
-                cat_sql = f"SELECT SUBSTRING(id, 4, 1) as cat, COUNT(*) as count FROM (SELECT id FROM judgments {where_sql} LIMIT 1000) as dummy GROUP BY SUBSTRING(id, 4, 1)"
+                cat_sql = f"SELECT SUBSTRING(id, 4, 1) as cat, COUNT(*) as count FROM judgments {where_sql} GROUP BY SUBSTRING(id, 4, 1)"
                 cursor.execute(cat_sql, tuple(params))
                 cat_map = {"M": "刑事", "V": "民事", "E": "民事", "A": "行政", "P": "懲戒", "S": "憲法"}
                 for row in cursor.fetchall():
@@ -448,7 +442,7 @@ criminal_map_prompt = ChatPromptTemplate.from_messages([
 ])
 
 generic_map_prompt = ChatPromptTemplate.from_messages([
-    ("system", "你是一位專業的法院司法助理。請從以下提供的【單篇裁判書】中精精擷取資訊。\n"
+    ("system", "你是一位專業的法院司法助理。請從以下提供的【單篇裁判書】中精確擷取資訊。\n"
                "【重要原則】：只記錄文中明確記載的內容，禁止臆測；若未提及請填寫「判決未載明」。\n\n"
                "請依固定格式輸出：\n"
                "判決字號與案由：\n"
