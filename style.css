@@ -1,5 +1,4 @@
-body { font-family: "微軟正黑體", Arial, sans-serif; max-width: 1250px; margin: 20px auto; line-height: 1.6; color: #333; }
-
+body { font-family: "微軟正黑體", Arial, sans-serif; max-width: 96%; margin: 20px auto; line-height: 1.6; color: #333; }
 /* 搜尋條件與進階面板 */
 .search-box { background: #eef2eb; padding: 18px 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #d0dcae; }
 .basic-search-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -34,10 +33,8 @@ body { font-family: "微軟正黑體", Arial, sans-serif; max-width: 1250px; mar
 
 /* 新增：左右佈局專用樣式 */
 .page-layout { display: flex; gap: 20px; margin-top: 15px; align-items: flex-start; }
-.content-area { flex: 2; min-width: 0; }
-.ai-sidebar { flex: 1; position: sticky; top: 20px; height: 85vh; }
-.ai-sidebar .chat-card { margin-top: 0; margin-bottom: 0; height: 100%; display: flex; flex-direction: column; }
-.ai-sidebar .chat-messages { flex: 1; overflow-y: auto; }
+.content-area { flex: 1; min-width: 0; }
+.ai-sidebar { width: 340px; flex-shrink: 0; position: sticky; top: 20px; height: 85vh; }
 
 /* 左右分欄排版 (左側列表與詳情) */
 .main-container { display: flex; gap: 20px; align-items: flex-start; margin-top: 0; }
@@ -100,6 +97,39 @@ body { font-family: "微軟正黑體", Arial, sans-serif; max-width: 1250px; mar
 @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-5px); } }
 
 .facet-sidebar {
+            width: 260px; flex-shrink: 0; background: #e8f5e9; 
+            border: 1px solid #a5d6a7; border-radius: 8px; padding: 10px; margin-right: 15px;
+            max-height: 85vh; overflow-y: auto;
+        }
+        .facet-group { margin-bottom: 12px; background: #fff; border-radius: 6px; border: 1px solid #c8e6c9; }
+        .facet-header { 
+            background: #f1f8e9; padding: 10px; font-weight: bold; font-size: 1.05em;
+            cursor: pointer; display: flex; align-items: center; 
+        }
+        .facet-header::before { content: '➖'; margin-right: 8px; font-size: 0.8em; }
+        .facet-header.collapsed::before { content: '➕'; }
+        .facet-list { list-style: none; padding: 0; margin: 0; }
+        .facet-list li { 
+            padding: 8px 10px; border-top: 1px solid #eee; display: flex; 
+            justify-content: space-between; align-items: center; cursor: pointer; 
+            font-size: 0.95em; color: #2e7d32; transition: background 0.2s;
+        }
+        .facet-list li:hover { background: #f9fbe7; font-weight: bold; }
+        .facet-badge { background: #2e7d32; color: white; border-radius: 12px; padding: 2px 8px; font-size: 0.85em; font-weight: bold;}
+.pagination-controls {
+            text-align: center; margin-top: 15px; padding: 12px;
+            background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;
+        }
+        .pagination-controls button {
+            padding: 8px 16px; margin: 0 10px; border: 1px solid #ccc;
+            background: #fff; border-radius: 4px; cursor: pointer;
+            font-size: 0.95em; transition: background 0.2s;
+        }
+        .pagination-controls button:hover:not(:disabled) { background: #e2e6ea; }
+        .pagination-controls button:disabled { cursor: not-allowed; opacity: 0.5; background: #f1f3f5; }
+
+        /* 統計側邊欄風格 */
+        .facet-sidebar {
             width: 260px; flex-shrink: 0; background: #e8f5e9; 
             border: 1px solid #a5d6a7; border-radius: 8px; padding: 10px; margin-right: 15px;
             max-height: 85vh; overflow-y: auto;
