@@ -127,10 +127,16 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                     ed = f"{ed[:4]}-{ed[4:6]}-{ed[6:8]}"
                 params.append(ed)
             
-            # 年份過濾
+            # 年份過濾 (支援「其他年度」的條件轉換)
             if query.year:
-                where_clauses.append("id LIKE %s")
-                params.append(f"%,{query.year},%")
+                if query.year == "其他年度":
+                    current_roc_year = datetime.datetime.now().year - 1911
+                    # 搜尋年份小於前年的案件
+                    where_clauses.append("CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(id, ',', 2), ',', -1) AS UNSIGNED) <= %s")
+                    params.append(current_roc_year - 3)
+                else:
+                    where_clauses.append("id LIKE %s")
+                    params.append(f"%,{query.year},%")
             
             # 關鍵字條件
             if query.keyword:
@@ -220,8 +226,10 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
 
             where_sql = " WHERE " + " AND ".join(where_clauses)
 
-            # 1. 獲取符合條件的總筆數 (🚨 移除 LIMIT，真實統計全庫數量)
-            count_sql = f"SELECT COUNT(*) as total FROM judgments {where_sql}"
+            # ==============================================================
+            # 1. 中間列表總筆數：嚴格鎖定 LIMIT 1000，保護系統效能
+            # ==============================================================
+            count_sql = f"SELECT COUNT(*) as total FROM (SELECT 1 FROM judgments {where_sql} LIMIT 1000) as dummy"
             cursor.execute(count_sql, tuple(params))
             total_count = cursor.fetchone()['total']
 
@@ -248,10 +256,12 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             cursor.execute(data_sql, tuple(data_params))
             results = cursor.fetchall()
 
-            # 3. 獲取側邊欄過濾統計資料 (Facets) (🚨 全庫統計)
+            # ==============================================================
+            # 3. 左側選單統計 (Facets)：真實統計全庫數量 (不加 LIMIT)
+            # ==============================================================
             facets = {"courts": {}, "years": {}, "categories": {}}
             try:
-                # 🛑 解決年份失準：直接透過 SQL 的 SUBSTRING_INDEX 從 id 欄位 (例如 TPDM,115,...) 切割出準確的年份
+                # 統計年度：直接透過 SQL SUBSTRING_INDEX 從 ID 切出精準年份
                 current_roc_year = datetime.datetime.now().year - 1911
                 year_sql = f"SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(id, ',', 2), ',', -1) as ext_year, COUNT(*) as count FROM judgments {where_sql} GROUP BY ext_year"
                 cursor.execute(year_sql, tuple(params))
