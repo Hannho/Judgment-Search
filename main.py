@@ -109,25 +109,21 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             where_clauses = ["1=1"]
             params = []
 
-            # 基礎搜尋條件
             if query.court:
                 where_clauses.append("id LIKE %s")
                 params.append(f"{query.court}%") 
             if query.start_date:
                 where_clauses.append("date >= %s")
                 sd = query.start_date.replace('-', '')
-                if len(sd) == 8: 
-                    sd = f"{sd[:4]}-{sd[4:6]}-{sd[6:8]}"
+                if len(sd) == 8: sd = f"{sd[:4]}-{sd[4:6]}-{sd[6:8]}"
                 params.append(sd)
                 
             if query.end_date:
                 where_clauses.append("date <= %s")
                 ed = query.end_date.replace('-', '')
-                if len(ed) == 8: 
-                    ed = f"{ed[:4]}-{ed[4:6]}-{ed[6:8]}"
+                if len(ed) == 8: ed = f"{ed[:4]}-{ed[4:6]}-{ed[6:8]}"
                 params.append(ed)
             
-            # 🛑 年份過濾：改回使用已建立索引的 year 欄位，秒殺 500 Timeout 錯誤
             if query.year:
                 if query.year == "其他年度":
                     current_roc_year = datetime.datetime.now().year - 1911
@@ -137,7 +133,6 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                     where_clauses.append("year = %s")
                     params.append(query.year)
             
-            # 關鍵字條件
             if query.keyword:
                 for kw in query.keyword.split():
                     where_clauses.append("(title LIKE %s OR content LIKE %s OR case_no LIKE %s OR id LIKE %s)")
@@ -147,66 +142,45 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                     where_clauses.append("title LIKE %s")
                     params.append(f"%{kw}%")
                     
-            # 全文內容 (支援進階語法)
             if query.content_kw:
                 s = query.content_kw.replace('+', ' + ').replace('-', ' - ').replace('&', ' & ').replace('(', ' ( ').replace(')', ' ) ')
                 tokens = [t for t in s.split() if t.strip()]
-                
                 content_sql = []
                 for i, token in enumerate(tokens):
-                    if token == '+':
-                        content_sql.append("OR")
-                    elif token == '&':
-                        content_sql.append("AND")
+                    if token == '+': content_sql.append("OR")
+                    elif token == '&': content_sql.append("AND")
                     elif token == '-':
-                        if not content_sql or content_sql[-1] == '(':
-                            content_sql.append("NOT")
-                        else:
-                            content_sql.append("AND NOT")
+                        if not content_sql or content_sql[-1] == '(': content_sql.append("NOT")
+                        else: content_sql.append("AND NOT")
                     elif token == '(':
-                        if i > 0 and tokens[i-1] not in ['+', '&', '-', '(']:
-                            content_sql.append("AND")
+                        if i > 0 and tokens[i-1] not in ['+', '&', '-', '(']: content_sql.append("AND")
                         content_sql.append("(")
-                    elif token == ')':
-                        content_sql.append(")")
+                    elif token == ')': content_sql.append(")")
                     else:
-                        if i > 0 and tokens[i-1] not in ['+', '&', '-', '(']:
-                            content_sql.append("AND")
+                        if i > 0 and tokens[i-1] not in ['+', '&', '-', '(']: content_sql.append("AND")
                         content_sql.append("content LIKE %s")
                         params.append(f"%{token}%")
                 
                 opens = content_sql.count('(')
                 closes = content_sql.count(')')
-                if opens > closes:
-                    content_sql.extend([")"] * (opens - closes))
-                
-                if content_sql:
-                    where_clauses.append(f"({' '.join(content_sql)})")
+                if opens > closes: content_sql.extend([")"] * (opens - closes))
+                if content_sql: where_clauses.append(f"({' '.join(content_sql)})")
 
-            # 裁判書類別
             if query.doc_type == "判決":
                 where_clauses.append("(content LIKE '判決%%' OR content LIKE '%%判決如下%%')")
             elif query.doc_type == "裁定":
                 where_clauses.append("(content LIKE '裁定%%' OR content LIKE '%%裁定如下%%' OR content LIKE '支付命令%%')")
 
-            # 案件類別
             if query.case_categories:
                 cat_conditions = []
                 for cat in query.case_categories:
-                    if cat == "刑事":
-                        cat_conditions.append("(id LIKE '___M%%' OR content LIKE '%%刑事判決%%' OR content LIKE '%%刑事裁定%%' OR content LIKE '%%刑事簡易判決%%')")
-                    elif cat == "民事":
-                        cat_conditions.append("(id LIKE '___V%%' OR id LIKE '___E%%' OR content LIKE '%%民事判決%%' OR content LIKE '%%民事裁定%%' OR content LIKE '%%支付命令%%')")
-                    elif cat == "行政":
-                        cat_conditions.append("(id LIKE '___A%%' OR content LIKE '%%行政判決%%' OR content LIKE '%%行政裁定%%')")
-                    elif cat == "憲法":
-                        cat_conditions.append("(content LIKE '%%憲法法庭%%' OR content LIKE '%%憲法判決%%')")
-                    elif cat == "懲戒":
-                        cat_conditions.append("(content LIKE '%%懲戒法院%%' OR content LIKE '%%懲戒判決%%')")
-                if cat_conditions:
-                    where_clauses.append("(" + " OR ".join(cat_conditions) + ")")
+                    if cat == "刑事": cat_conditions.append("(id LIKE '___M%%' OR content LIKE '%%刑事判決%%' OR content LIKE '%%刑事裁定%%' OR content LIKE '%%刑事簡易判決%%')")
+                    elif cat == "民事": cat_conditions.append("(id LIKE '___V%%' OR id LIKE '___E%%' OR content LIKE '%%民事判決%%' OR content LIKE '%%民事裁定%%' OR content LIKE '%%支付命令%%')")
+                    elif cat == "行政": cat_conditions.append("(id LIKE '___A%%' OR content LIKE '%%行政判決%%' OR content LIKE '%%行政裁定%%')")
+                    elif cat == "憲法": cat_conditions.append("(content LIKE '%%憲法法庭%%' OR content LIKE '%%憲法判決%%')")
+                    elif cat == "懲戒": cat_conditions.append("(content LIKE '%%懲戒法院%%' OR content LIKE '%%懲戒判決%%')")
+                if cat_conditions: where_clauses.append("(" + " OR ".join(cat_conditions) + ")")
 
-            # 進階過濾
             if query.adv_case_type:
                 where_clauses.append("case_type LIKE %s")
                 params.append(f"%{query.adv_case_type}%")
@@ -226,14 +200,19 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             where_sql = " WHERE " + " AND ".join(where_clauses)
 
             # ==============================================================
-            # 1. 總筆數 (全庫精確統計)
+            # 1. 總筆數 (智慧切換：空條件查 Schema，有條件套用 50000 筆安全鎖)
             # ==============================================================
-            count_sql = f"SELECT COUNT(*) as total FROM judgments {where_sql}"
-            cursor.execute(count_sql, tuple(params))
-            total_count = cursor.fetchone()['total']
+            if len(where_clauses) == 1:
+                cursor.execute("SELECT table_rows as total FROM information_schema.tables WHERE table_schema = %s AND table_name = 'judgments'", (DB_NAME,))
+                schema_res = cursor.fetchone()
+                total_count = schema_res['total'] if schema_res and schema_res['total'] else 1234303
+            else:
+                count_sql = f"SELECT COUNT(*) as total FROM (SELECT 1 FROM judgments {where_sql} LIMIT 50000) as dummy"
+                cursor.execute(count_sql, tuple(params))
+                total_count = cursor.fetchone()['total']
 
             # ==============================================================
-            # 2. 當頁資料 (使用 LIMIT 10 分頁，保護中間清單)
+            # 2. 當頁資料 (分頁)
             # ==============================================================
             order_clause = "ORDER BY date DESC"
             if query.sort_type == "date_asc": order_clause = "ORDER BY date ASC"
@@ -242,13 +221,10 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             elif query.sort_type == "size_desc": order_clause = "ORDER BY CHAR_LENGTH(content) DESC"
             elif query.sort_type == "size_asc": order_clause = "ORDER BY CHAR_LENGTH(content) ASC"
 
-            # 智慧索引選擇：根據你資料庫實際擁有的索引來動態調整
             force_index = ""
             if len(where_clauses) == 1 and query.sort_type in ["date_desc", "date_asc"]:
-                # 如果只有全域時間排序，使用 idx_date
                 force_index = "FORCE INDEX (idx_date)"
             elif query.year and len(where_clauses) == 2 and query.sort_type in ["date_desc", "date_asc"]:
-                # 🛑 這裡改成使用你資料庫裡確實存在的 idx_year
                 force_index = "FORCE INDEX (idx_year)"
 
             limit = 10
@@ -260,49 +236,45 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             results = cursor.fetchall()
 
             # ==============================================================
-            # 3. 側邊欄過濾統計資料 Facets (全庫精確統計，極速版)
+            # 3. 側邊欄過濾統計資料 Facets (極速內存分群版)
             # ==============================================================
             facets = {"courts": {}, "years": {}, "categories": {}}
             try:
-                # 🛑 統計年度：直接使用 year 欄位，秒殺完成分群
+                # 🚨 效能救星：撈出最多 5 萬筆 ID 回 Python 解析，避免 MySQL 崩潰
+                facet_sql = f"SELECT id FROM judgments {force_index} {where_sql} LIMIT 50000"
+                cursor.execute(facet_sql, tuple(params))
+                all_ids = cursor.fetchall()
+                
                 current_roc_year = datetime.datetime.now().year - 1911
-                year_sql = f"SELECT year, COUNT(*) as count FROM judgments {where_sql} GROUP BY year"
-                cursor.execute(year_sql, tuple(params))
-                
                 y_stats = {f"今年 ({current_roc_year})": 0, f"去年 ({current_roc_year-1})": 0, f"前年 ({current_roc_year-2})": 0, "其他年度": 0}
-                
-                for row in cursor.fetchall():
-                    y_str = row["year"]
-                    if y_str and str(y_str).strip().isdigit():
-                        y = int(str(y_str).strip())
-                        if y == current_roc_year:
-                            y_stats[f"今年 ({current_roc_year})"] += row["count"]
-                        elif y == current_roc_year - 1:
-                            y_stats[f"去年 ({current_roc_year-1})"] += row["count"]
-                        elif y == current_roc_year - 2:
-                            y_stats[f"前年 ({current_roc_year-2})"] += row["count"]
-                        else:
-                            y_stats["其他年度"] += row["count"]
-                    else:
-                        y_stats["其他年度"] += row["count"]
-                            
-                facets["years"] = {k: v for k, v in y_stats.items() if v > 0}
-                
-                # 統計法院
-                court_sql = f"SELECT SUBSTRING(id, 1, 3) as court, COUNT(*) as count FROM judgments {where_sql} GROUP BY SUBSTRING(id, 1, 3)"
-                cursor.execute(court_sql, tuple(params))
-                for row in cursor.fetchall():
-                    if row["court"]:
-                        facets["courts"][row["court"]] = row["count"]
-                        
-                # 統計案件類別
-                cat_sql = f"SELECT SUBSTRING(id, 4, 1) as cat, COUNT(*) as count FROM judgments {where_sql} GROUP BY SUBSTRING(id, 4, 1)"
-                cursor.execute(cat_sql, tuple(params))
                 cat_map = {"M": "刑事", "V": "民事", "E": "民事", "A": "行政", "P": "懲戒", "S": "憲法"}
-                for row in cursor.fetchall():
-                    c_name = cat_map.get(row["cat"])
+                
+                for row in all_ids:
+                    case_id = row['id']
+                    if not case_id: continue
+                    parts = case_id.split(',')
+                    
+                    # 統計法院
+                    court_code = case_id[:3]
+                    facets["courts"][court_code] = facets["courts"].get(court_code, 0) + 1
+                    
+                    # 統計案件類別
+                    cat_char = case_id[3:4] if len(case_id) >= 4 else ""
+                    c_name = cat_map.get(cat_char)
                     if c_name:
-                        facets["categories"][c_name] = facets["categories"].get(c_name, 0) + row["count"]
+                        facets["categories"][c_name] = facets["categories"].get(c_name, 0) + 1
+                        
+                    # 統計年度
+                    if len(parts) >= 2 and parts[1].strip().isdigit():
+                        y = int(parts[1].strip())
+                        if y == current_roc_year: y_stats[f"今年 ({current_roc_year})"] += 1
+                        elif y == current_roc_year - 1: y_stats[f"去年 ({current_roc_year-1})"] += 1
+                        elif y == current_roc_year - 2: y_stats[f"前年 ({current_roc_year-2})"] += 1
+                        else: y_stats["其他年度"] += 1
+                    else:
+                        y_stats["其他年度"] += 1
+                        
+                facets["years"] = {k: v for k, v in y_stats.items() if v > 0}
             except Exception as e:
                 print(f"統計資料抓取失敗: {e}")
             
