@@ -96,26 +96,6 @@ body { font-family: "微軟正黑體", Arial, sans-serif; max-width: 96%; margin
 .chat-typing span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-5px); } }
 
-.facet-sidebar {
-            width: 260px; flex-shrink: 0; background: #e8f5e9; 
-            border: 1px solid #a5d6a7; border-radius: 8px; padding: 10px; margin-right: 15px;
-            max-height: 85vh; overflow-y: auto;
-        }
-        .facet-group { margin-bottom: 12px; background: #fff; border-radius: 6px; border: 1px solid #c8e6c9; }
-        .facet-header { 
-            background: #f1f8e9; padding: 10px; font-weight: bold; font-size: 1.05em;
-            cursor: pointer; display: flex; align-items: center; 
-        }
-        .facet-header::before { content: '➖'; margin-right: 8px; font-size: 0.8em; }
-        .facet-header.collapsed::before { content: '➕'; }
-        .facet-list { list-style: none; padding: 0; margin: 0; }
-        .facet-list li { 
-            padding: 8px 10px; border-top: 1px solid #eee; display: flex; 
-            justify-content: space-between; align-items: center; cursor: pointer; 
-            font-size: 0.95em; color: #2e7d32; transition: background 0.2s;
-        }
-        .facet-list li:hover { background: #f9fbe7; font-weight: bold; }
-        .facet-badge { background: #2e7d32; color: white; border-radius: 12px; padding: 2px 8px; font-size: 0.85em; font-weight: bold;}
 .pagination-controls {
             text-align: center; margin-top: 15px; padding: 12px;
             background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;

@@ -2,6 +2,7 @@ import os
 import time
 import asyncio
 import pymysql
+import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -38,7 +39,7 @@ app.add_middleware(
 )
 
 # ==========================================
-# 0. 資料庫連線設定 (支援混合雲架構與自訂 Port)
+# 0. 資料庫連線設定
 # ==========================================
 DB_HOST = os.getenv("DB_HOST", "35.221.215.146")
 DB_USER = os.getenv("DB_USER", "admin1")
@@ -65,7 +66,6 @@ def get_db_connection():
             charset='utf8mb4',
             cursorclass=pymysql.cursors.DictCursor
         )
-
 
 # ==========================================
 # 1. 靜態檔案與資料庫資料 API 
@@ -126,9 +126,16 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                 if len(ed) == 8: 
                     ed = f"{ed[:4]}-{ed[4:6]}-{ed[6:8]}"
                 params.append(ed)
+            
+            # 🛑 年份過濾 (支援「其他年度」的模糊條件)
             if query.year:
-                where_clauses.append("year = %s")
-                params.append(query.year)
+                if query.year == "其他年度":
+                    current_roc_year = datetime.datetime.now().year - 1911
+                    where_clauses.append("CAST(year AS UNSIGNED) <= %s")
+                    params.append(current_roc_year - 3)
+                else:
+                    where_clauses.append("year = %s")
+                    params.append(query.year)
             
             # 關鍵字條件
             if query.keyword:
@@ -231,7 +238,6 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             elif query.sort_type == "size_desc": order_clause = "ORDER BY CHAR_LENGTH(content) DESC"
             elif query.sort_type == "size_asc": order_clause = "ORDER BY CHAR_LENGTH(content) ASC"
 
-            # 智慧索引選擇
             force_index = ""
             if len(where_clauses) == 1 and query.sort_type in ["date_desc", "date_asc"]:
                 force_index = "FORCE INDEX (idx_date)"
@@ -250,12 +256,28 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             # 3. 獲取側邊欄過濾統計資料 (Facets)
             facets = {"courts": {}, "years": {}, "categories": {}}
             try:
-                # 統計年度
-                year_sql = f"SELECT year, COUNT(*) as count FROM (SELECT year FROM judgments {where_sql} LIMIT 1000) as dummy GROUP BY year ORDER BY year DESC"
+                # 🛑 動態計算與歸納年份
+                current_roc_year = datetime.datetime.now().year - 1911
+                year_sql = f"SELECT year, COUNT(*) as count FROM (SELECT year FROM judgments {where_sql} LIMIT 1000) as dummy GROUP BY year"
                 cursor.execute(year_sql, tuple(params))
+                
+                y_stats = {f"今年 ({current_roc_year})": 0, f"去年 ({current_roc_year-1})": 0, f"前年 ({current_roc_year-2})": 0, "其他年度": 0}
+                
                 for row in cursor.fetchall():
-                    if row["year"] and row["year"].strip():
-                        facets["years"][row["year"]] = row["count"]
+                    y_str = row["year"]
+                    if y_str and str(y_str).strip().isdigit():
+                        y = int(str(y_str).strip())
+                        if y == current_roc_year:
+                            y_stats[f"今年 ({current_roc_year})"] += row["count"]
+                        elif y == current_roc_year - 1:
+                            y_stats[f"去年 ({current_roc_year-1})"] += row["count"]
+                        elif y == current_roc_year - 2:
+                            y_stats[f"前年 ({current_roc_year-2})"] += row["count"]
+                        else:
+                            y_stats["其他年度"] += row["count"]
+                            
+                # 過濾掉 0 筆的年份分類，保持畫面清爽
+                facets["years"] = {k: v for k, v in y_stats.items() if v > 0}
                 
                 # 統計法院
                 court_sql = f"SELECT SUBSTRING(id, 1, 3) as court, COUNT(*) as count FROM (SELECT id FROM judgments {where_sql} LIMIT 1000) as dummy GROUP BY SUBSTRING(id, 1, 3)"
@@ -384,7 +406,7 @@ def get_history(req: JudgmentRequest):
     return {"history": history_results}
 
 # ==========================================
-# 3. AI 問答 API 區塊 (多階段分類與動態 Prompt)
+# 3. AI 問答 API 區塊
 # ==========================================
 class MultiQAQuery(BaseModel):
     judgments_content: list[str]
@@ -392,7 +414,6 @@ class MultiQAQuery(BaseModel):
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 
-# 🛑 [階段 1] 案件分類 Prompt
 classify_prompt = ChatPromptTemplate.from_messages([
     ("system", "你是一位專業的台灣法院書記官。請根據以下裁判書的開頭與內容，判斷這是哪一種案件類別。\n"
                "你只能從以下選項中回答一個詞：【民事】、【刑事】、【行政】、【懲戒】、【憲法】。\n"
@@ -400,7 +421,6 @@ classify_prompt = ChatPromptTemplate.from_messages([
     ("human", "【裁判書開頭內容】：\n{text}")
 ])
 
-# 🛑 [階段 2] 擷取資訊 (Map) 專屬 Prompts
 civil_map_prompt = ChatPromptTemplate.from_messages([
     ("system", "你是一位專業的法院司法助理。請從以下提供的【單篇民事裁判書】中精確擷取資訊。\n"
                "【重要原則】：只記錄文中明確記載的內容，禁止臆測；若未提及請填寫「判決未載明」。\n\n"
@@ -428,7 +448,7 @@ criminal_map_prompt = ChatPromptTemplate.from_messages([
 ])
 
 generic_map_prompt = ChatPromptTemplate.from_messages([
-    ("system", "你是一位專業的法院司法助理。請從以下提供的【單篇裁判書】中精確擷取資訊。\n"
+    ("system", "你是一位專業的法院司法助理。請從以下提供的【單篇裁判書】中精精擷取資訊。\n"
                "【重要原則】：只記錄文中明確記載的內容，禁止臆測；若未提及請填寫「判決未載明」。\n\n"
                "請依固定格式輸出：\n"
                "判決字號與案由：\n"
@@ -440,7 +460,6 @@ generic_map_prompt = ChatPromptTemplate.from_messages([
     ("human", "【單篇裁判書內容】：\n{single_case_text}")
 ])
 
-# 🛑 [階段 3] 統整回答 (Reduce) 專屬 Prompts
 civil_reduce_prompt = ChatPromptTemplate.from_messages([
     ("system", """你是一個專門分析中華民國【民事判決】的司法 AI。
 請嚴格根據提供的判決內容回答問題，不得自行捏造事實。
@@ -542,10 +561,7 @@ async def ask_ai_multiple(query: MultiQAQuery):
         if not valid_cases:
             return {"answer": "提供的判決內容為空，無法進行分析。"}
 
-        # ==========================================
-        # 🟢 階段 1：讓 AI 判斷案件類型
-        # ==========================================
-        sample_text = valid_cases[0][:1000] # 取第一篇的前 1000 字讓 AI 快速判斷
+        sample_text = valid_cases[0][:1000]
         classify_chain = classify_prompt | llm
         try:
             category_res = await classify_chain.ainvoke({"text": sample_text})
@@ -556,9 +572,6 @@ async def ask_ai_multiple(query: MultiQAQuery):
             
         print(f"🤖 AI 自動分類結果：[{category}]")
 
-        # ==========================================
-        # 🟢 階段 2 & 3：動態載入對應的 Prompt
-        # ==========================================
         if "刑事" in category:
             map_chain = criminal_map_prompt | llm
             reduce_chain = criminal_reduce_prompt | llm
@@ -569,9 +582,6 @@ async def ask_ai_multiple(query: MultiQAQuery):
             map_chain = generic_map_prompt | llm
             reduce_chain = generic_reduce_prompt | llm
 
-        # ==========================================
-        # 🟢 執行 Map (逐篇擷取) -> Reduce (比較統整)
-        # ==========================================
         extracted_summaries = []
         for idx, content in enumerate(valid_cases):
             header = content[:200]
