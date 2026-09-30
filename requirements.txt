@@ -11,3 +11,4 @@ langchain-text-splitters
 langchain-community
 faiss-cpu
 DBUtils==3.0.3
+psycopg2-binary

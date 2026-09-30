@@ -1,7 +1,8 @@
 import os
 import time
 import asyncio
-import pymysql
+import psycopg2
+import psycopg2.extras
 import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,41 +41,28 @@ app.add_middleware(
 )
 
 # ==========================================
-# 0. 資料庫連線設定 (採用連線池)
+# 0. 資料庫連線設定 (改為本機 PostgreSQL)
 # ==========================================
-DB_HOST = os.getenv("DB_HOST", "35.221.215.146")
-DB_USER = os.getenv("DB_USER", "admin1")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "12345678")
+# 預設連線到本機，如果你有修改 pgAdmin 的預設設定，請在 .env 中調整
+DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "12345678") # 請改成你在本機 pgAdmin 設定的密碼
 DB_NAME = os.getenv("DB_NAME", "judgment")         
-INSTANCE_CONNECTION_NAME = os.getenv("INSTANCE_CONNECTION_NAME", "judgmentsearch:asia-east1:judgment-search") 
+DB_PORT = os.getenv("DB_PORT", "5432")
 
-# 建立全域連線池
-db_pool = None
-if os.environ.get("K_SERVICE"):
-    db_pool = PooledDB(
-        creator=pymysql,
-        maxconnections=15,  # 設定最大連線數
-        unix_socket=f'/cloudsql/{INSTANCE_CONNECTION_NAME}',
-        user=DB_USER,
-        password=DB_PASSWORD,
-        database=DB_NAME,
-        charset='utf8mb4',
-        cursorclass=pymysql.cursors.DictCursor
-    )
-else:
-    db_pool = PooledDB(
-        creator=pymysql,
-        maxconnections=15,
-        host=DB_HOST,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        database=DB_NAME,
-        charset='utf8mb4',
-        cursorclass=pymysql.cursors.DictCursor
-    )
+# 建立 PostgreSQL 全域連線池
+db_pool = PooledDB(
+    creator=psycopg2,
+    maxconnections=15,
+    host=DB_HOST,
+    user=DB_USER,
+    password=DB_PASSWORD,
+    dbname=DB_NAME,
+    port=DB_PORT,
+    cursor_factory=psycopg2.extras.DictCursor # 讓回傳的資料像 Dict 一樣可以用 key 取值
+)
 
 def get_db_connection():
-    # 直接從池中取得連線
     return db_pool.connection()
 
 # ==========================================
@@ -137,7 +125,8 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             if query.year:
                 if query.year == "其他年度":
                     current_roc_year = datetime.datetime.now().year - 1911
-                    where_clauses.append("(CAST(year AS UNSIGNED) <= %s OR year IS NULL OR year = '')")
+                    # PostgreSQL 型別嚴謹，需排除空值並轉型
+                    where_clauses.append("(year IS NULL OR year = '' OR CAST(NULLIF(year, '') AS INTEGER) <= %s)")
                     params.append(current_roc_year - 3)
                 else:
                     where_clauses.append("year = %s")
@@ -145,14 +134,14 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
             
             if query.keyword:
                 for kw in query.keyword.split():
-                    # 標題與內文使用全文檢索，案號與ID保留 LIKE
-                    where_clauses.append("(MATCH(title, content) AGAINST (%s IN BOOLEAN MODE) OR case_no LIKE %s OR id LIKE %s)")
-                    params.extend([kw, f"%{kw}%", f"%{kw}%"])
+                    # 將 MySQL MATCH AGAINST 替換為 PostgreSQL 的 LIKE 模糊搜尋 (搭配 trigram 索引)
+                    where_clauses.append("(title LIKE %s OR content LIKE %s OR case_no LIKE %s OR id LIKE %s)")
+                    params.extend([f"%{kw}%", f"%{kw}%", f"%{kw}%", f"%{kw}%"])
             
             if query.title_kw:
                 for kw in query.title_kw.split():
-                    where_clauses.append("MATCH(title) AGAINST (%s IN BOOLEAN MODE)")
-                    params.append(kw)
+                    where_clauses.append("title LIKE %s")
+                    params.append(f"%{kw}%")
                     
             if query.content_kw:
                 s = query.content_kw.replace('+', ' + ').replace('-', ' - ').replace('&', ' & ').replace('(', ' ( ').replace(')', ' ) ')
@@ -170,9 +159,8 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                     elif token == ')': content_sql.append(")")
                     else:
                         if i > 0 and tokens[i-1] not in ['+', '&', '-', '(']: content_sql.append("AND")
-                        # 替換 LIKE 為 MATCH AGAINST
-                        content_sql.append("MATCH(content) AGAINST (%s IN BOOLEAN MODE)")
-                        params.append(token)
+                        content_sql.append("content LIKE %s")
+                        params.append(f"%{token}%")
                 
                 opens = content_sql.count('(')
                 closes = content_sql.count(')')
@@ -198,66 +186,60 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                 where_clauses.append("case_type LIKE %s")
                 params.append(f"%{query.adv_case_type}%")
             if query.adv_no_start is not None:
-                # 改用虛擬整數欄位查詢，避開 CAST()
                 where_clauses.append("case_no_int >= %s")
                 params.append(query.adv_no_start)
             if query.adv_no_end is not None:
-                # 改用虛擬整數欄位查詢，避開 CAST()
                 where_clauses.append("case_no_int <= %s")
                 params.append(query.adv_no_end)
             if query.adv_size_min is not None:
-                where_clauses.append("(CHAR_LENGTH(content) * 2 / 1024) >= %s")
+                # PostgreSQL 算字元長度用 length()
+                where_clauses.append("(length(content) * 2 / 1024) >= %s")
                 params.append(query.adv_size_min)
             if query.adv_size_max is not None:
-                where_clauses.append("(CHAR_LENGTH(content) * 2 / 1024) <= %s")
+                where_clauses.append("(length(content) * 2 / 1024) <= %s")
                 params.append(query.adv_size_max)
 
             where_sql = " WHERE " + " AND ".join(where_clauses)
 
             # ==============================================================
-            # 1. 總筆數 (全庫精準真實統計)
+            # 1. 總筆數 (PostgreSQL 計算)
             # ==============================================================
             if len(where_clauses) == 1:
-                # 無搜尋條件時利用 schema 快速預估，避免首頁載入卡頓
-                cursor.execute("SELECT table_rows as total FROM information_schema.tables WHERE table_schema = %s AND table_name = 'judgments'", (DB_NAME,))
+                # 無搜尋條件時，利用 pg_class 快速預估表資料量，避免首頁載入卡頓
+                cursor.execute("SELECT reltuples::bigint AS total FROM pg_class WHERE relname = 'judgments';")
                 schema_res = cursor.fetchone()
-                total_count = schema_res['total'] if schema_res and schema_res['total'] else 1234303
+                total_count = schema_res['total'] if schema_res and schema_res['total'] > 0 else 1234303
             else:
-                # 🚨 拿掉所有 LIMIT，直接用 SQL 原生 COUNT 高速計算全庫符合條件的數量
                 count_sql = f"SELECT COUNT(1) as total FROM judgments {where_sql}"
                 cursor.execute(count_sql, tuple(params))
                 total_count = cursor.fetchone()['total']
 
             # ==============================================================
-            # 2. 當頁資料 (使用 LIMIT 10 分頁，保護中間清單不超載)
+            # 2. 當頁資料 
             # ==============================================================
             order_clause = "ORDER BY date DESC"
             if query.sort_type == "date_asc": order_clause = "ORDER BY date ASC"
-            elif query.sort_type == "no_desc": order_clause = "ORDER BY case_no_int DESC" # 排序優化
-            elif query.sort_type == "no_asc": order_clause = "ORDER BY case_no_int ASC"   # 排序優化
-            elif query.sort_type == "size_desc": order_clause = "ORDER BY CHAR_LENGTH(content) DESC"
-            elif query.sort_type == "size_asc": order_clause = "ORDER BY CHAR_LENGTH(content) ASC"
+            elif query.sort_type == "no_desc": order_clause = "ORDER BY case_no_int DESC NULLS LAST"
+            elif query.sort_type == "no_asc": order_clause = "ORDER BY case_no_int ASC NULLS LAST"
+            elif query.sort_type == "size_desc": order_clause = "ORDER BY length(content) DESC"
+            elif query.sort_type == "size_asc": order_clause = "ORDER BY length(content) ASC"
             
-            force_index = ""
-            if len(where_clauses) == 1 and query.sort_type in ["date_desc", "date_asc"]:
-                force_index = "FORCE INDEX (idx_date)"
-            elif query.year and len(where_clauses) == 2 and query.sort_type in ["date_desc", "date_asc"]:
-                force_index = "FORCE INDEX (idx_year)"
-
             limit = 10
             offset = (query.page - 1) * limit
             
-            data_sql = f"SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments {force_index} {where_sql} {order_clause} LIMIT %s OFFSET %s"
+            data_sql = f"SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments {where_sql} {order_clause} LIMIT %s OFFSET %s"
             data_params = params + [limit, offset]
             cursor.execute(data_sql, tuple(data_params))
-            results = cursor.fetchall()
+            
+            # 將 DictRow 轉為標準 dict，讓前端正常接收 JSON
+            results = [dict(row) for row in cursor.fetchall()]
 
             # ==============================================================
-            # 3. 側邊欄 Facets 過濾統計 (純 SQL 優化版)
+            # 3. 側邊欄 Facets 過濾統計
             # ==============================================================
             facets = {"courts": {}, "years": {}, "categories": {}}
             
-            # 【防呆優化】如果沒有搜尋條件，不要計算 Facets，避免首頁讀取逾時
+            # 防呆優化：如果沒有搜尋條件，不要計算 Facets，避免首頁讀取逾時
             if len(where_clauses) > 1:
                 try:
                     current_roc_year = datetime.datetime.now().year - 1911
@@ -279,14 +261,14 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                             y_stats["其他年度"] += row["count"]
                     facets["years"] = {k: v for k, v in y_stats.items() if v > 0}
                     
-                    # 統計法院 (改用虛擬欄位 court_code)
+                    # 統計法院 
                     court_sql = f"SELECT court_code as court, COUNT(1) as count FROM judgments {where_sql} GROUP BY court_code"
                     cursor.execute(court_sql, tuple(params))
                     for row in cursor.fetchall():
                         if row["court"]:
                             facets["courts"][row["court"]] = row["count"]
                             
-                    # 統計案件類別 (改用虛擬欄位 category_code)
+                    # 統計案件類別
                     cat_sql = f"SELECT category_code as cat, COUNT(1) as count FROM judgments {where_sql} GROUP BY category_code"
                     cursor.execute(cat_sql, tuple(params))
                     cat_map = {"M": "刑事", "V": "民事", "E": "民事", "A": "行政", "P": "懲戒", "S": "憲法"}
