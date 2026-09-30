@@ -357,7 +357,9 @@
         // 側邊欄渲染邏輯 (Facets)
         function renderFacets(facets) {
             const sidebar = document.getElementById('facetSidebar');
-            if (totalItems === 0) {
+            
+            // 防呆處理：如果後端因為空條件回傳空的 facets 或是查無資料，隱藏面板
+            if (totalItems === 0 || !facets || Object.keys(facets.courts || {}).length === 0) {
                 sidebar.style.display = 'none';
                 return;
             }
@@ -373,6 +375,7 @@
         }
 
         function generateFacetGroup(title, dataObj, formatKeyFn, type) {
+            if (!dataObj) return '';
             let keys = Object.keys(dataObj);
             
             // 年份特殊排序：確保 今年、去年、前年、其他 的順序
