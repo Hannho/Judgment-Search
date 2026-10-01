@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>裁判書搜尋與歷審查詢系統</title>
     <link rel="stylesheet" href="style.css">
-
 </head>
 <body>
 
@@ -354,11 +353,9 @@
             return parseInt(`${fullYear}${fullMonth}${fullDay}`, 10);
         }
 
-        // 側邊欄渲染邏輯 (Facets)
         function renderFacets(facets) {
             const sidebar = document.getElementById('facetSidebar');
             
-            // 防呆處理：如果後端因為空條件回傳空的 facets 或是查無資料，隱藏面板
             if (totalItems === 0 || !facets || Object.keys(facets.courts || {}).length === 0) {
                 sidebar.style.display = 'none';
                 return;
@@ -378,7 +375,6 @@
             if (!dataObj) return '';
             let keys = Object.keys(dataObj);
             
-            // 年份特殊排序：確保 今年、去年、前年、其他 的順序
             if (type === 'year') {
                 const yearOrder = ['今年', '去年', '前年', '其他'];
                 keys.sort((a, b) => {
@@ -399,7 +395,6 @@
                 </li>
             `).join('');
 
-            // 🛑 讓區塊預設加上 collapsed，並且隱藏 ul 內容
             return `
                 <div class="facet-group">
                     <div class="facet-header collapsed" onclick="this.classList.toggle('collapsed'); this.nextElementSibling.style.display = this.classList.contains('collapsed') ? 'none' : 'block';">
@@ -414,7 +409,6 @@
             if (type === 'court') {
                 document.getElementById('courtInput').value = value;
             } else if (type === 'year') {
-                // 自動剖析字串，把 "今年 (115)" 變回 "115"
                 let actualYear = value;
                 if (value.includes('(')) {
                     actualYear = value.split('(')[1].replace(')', '');
@@ -424,36 +418,51 @@
                 const checkboxes = document.querySelectorAll('input[name="caseCategory"]');
                 checkboxes.forEach(cb => { cb.checked = (cb.value === value); });
             }
-            // 套用條件後直接搜尋，畫面不亂跳
             searchJudgments();
         }
 
-        // 核心後端分頁抓取邏輯
+        // 非同步分批抓取核心邏輯
         async function fetchJudgments(page = 1) {
             currentSearchPayload.page = page;
             currentSearchPayload.sort_type = document.getElementById('tableSortSelect')?.value || "date_desc";
 
             try {
-                document.getElementById('results').innerHTML = '<p>⏳ 正在從資料庫搜尋中，請稍候...</p>';
+                document.getElementById('results').innerHTML = '<p>⏳ 正在從資料庫撈取前 10 筆資料，請稍候...</p>';
+                const sidebar = document.getElementById('facetSidebar');
+                sidebar.style.display = 'block';
+                sidebar.innerHTML = '<p style="padding: 15px; color: #666; font-weight: bold;">⏳ 全庫資料統計中...</p>';
                 
-                const response = await fetch('/api/judgments', {
+                // 第一階段：高速獲取當頁 10 筆
+                const listResponse = await fetch('/api/judgments/list', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(currentSearchPayload)
                 });
 
-                if (!response.ok) throw new Error("伺服器回應錯誤");
+                if (!listResponse.ok) throw new Error("伺服器回應錯誤");
                 
-                const data = await response.json();
-                if (data.error) throw new Error(data.error);
+                const listData = await listResponse.json();
+                if (listData.error) throw new Error(listData.error);
                 
-                judgmentsData = data.data.filter(item => item && item.id && item.id.trim() !== "");
-                totalItems = data.total;
+                judgmentsData = listData.data.filter(item => item && item.id && item.id.trim() !== "");
                 currentPage = page;
+                totalItems = "計算中..."; 
                 
                 displayResults();
                 
-                if (data.facets) renderFacets(data.facets);
+                // 第二階段：背景撈取統計與總筆數
+                const statsResponse = await fetch('/api/judgments/stats', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(currentSearchPayload)
+                });
+                
+                const statsData = await statsResponse.json();
+                totalItems = statsData.total;
+                
+                displayResults();
+                
+                if (statsData.facets) renderFacets(statsData.facets);
                 
             } catch(e) {
                 console.error(e);
@@ -463,7 +472,7 @@
             }
         }
 
-        // 初次載入
+        // 初次進入網頁執行載入
         currentSearchPayload = {};
         fetchJudgments(1);
 
@@ -564,8 +573,8 @@
             const tbody = document.getElementById('resultTableBody');
             if (!tbody) return;
 
-            // 🛑 鎖定列表最高只能以 1000 筆來計算總頁數 (最多 100 頁)
-            const displayTotal = Math.min(totalItems, 1000);
+            const totalNumeric = typeof totalItems === 'number' ? totalItems : 1000;
+            const displayTotal = Math.min(totalNumeric, 1000);
             const totalPages = Math.ceil(displayTotal / itemsPerPage) || 1;
             const startIndex = (currentPage - 1) * itemsPerPage;
 
@@ -636,8 +645,8 @@
         }
 
         function changePage(delta) {
-            // 🛑 鎖定翻頁最高限制
-            const displayTotal = Math.min(totalItems, 1000);
+            const totalNumeric = typeof totalItems === 'number' ? totalItems : 1000;
+            const displayTotal = Math.min(totalNumeric, 1000);
             const totalPages = Math.ceil(displayTotal / itemsPerPage) || 1;
             let newPage = currentPage + delta;
             
@@ -670,9 +679,7 @@
             }
 
             const currentSortVal = document.getElementById('tableSortSelect')?.value || "date_desc";
-
-            // 🛑 新增：超過 1000 筆時的文字提示
-            const limitWarning = totalItems > 1000 ? '<span style="color:#e65100; font-size:0.9em; margin-left: 8px;">(系統僅開放瀏覽前 1000 筆)</span>' : '';
+            const limitWarning = (typeof totalItems === 'number' && totalItems > 1000) ? '<span style="color:#e65100; font-size:0.9em; margin-left: 8px;">(系統僅開放瀏覽前 1000 筆)</span>' : '';
 
             let html = `
                 <div class="table-toolbar">
@@ -762,7 +769,6 @@
             document.getElementById('sidePanel').style.display = 'none';
         }
 
-        // 🤖 聊天機器人
         function handleChatKeyDown(event) {
             if (event.key === 'Enter') {
                 event.preventDefault();
@@ -892,6 +898,7 @@
                 }
             });
         }
+
         function escapeHtml(text) {
             const map = {
                 '&': '&amp;',

@@ -41,16 +41,14 @@ app.add_middleware(
 )
 
 # ==========================================
-# 0. 資料庫連線設定 (改為本機 PostgreSQL)
+# 0. 資料庫連線設定 (本機 PostgreSQL 連線池)
 # ==========================================
-# 預設連線到本機，如果你有修改 pgAdmin 的預設設定，請在 .env 中調整
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "12345678") # 請改成你在本機 pgAdmin 設定的密碼
+DB_PASSWORD = os.getenv("DB_PASSWORD", "12345678") 
 DB_NAME = os.getenv("DB_NAME", "judgment")         
 DB_PORT = os.getenv("DB_PORT", "5432")
 
-# 建立 PostgreSQL 全域連線池
 db_pool = PooledDB(
     creator=psycopg2,
     maxconnections=15,
@@ -59,20 +57,22 @@ db_pool = PooledDB(
     password=DB_PASSWORD,
     dbname=DB_NAME,
     port=DB_PORT,
-    cursor_factory=psycopg2.extras.DictCursor # 讓回傳的資料像 Dict 一樣可以用 key 取值
+    cursor_factory=psycopg2.extras.DictCursor 
 )
 
 def get_db_connection():
     return db_pool.connection()
 
 # ==========================================
-# 1. 靜態檔案與資料庫資料 API 
+# 1. 靜態檔案與共用邏輯
 # ==========================================
 @app.get("/")
 def read_index():
     if os.path.exists("index_final.html"):
         return FileResponse("index_final.html")
-    return {"message": "index_final.html not found"}
+    elif os.path.exists("index_final_3.html"):
+        return FileResponse("index_final_3.html")
+    return {"message": "HTML template not found"}
 
 @app.get("/style.css")
 def get_css():
@@ -98,114 +98,140 @@ class JudgmentSearchQuery(BaseModel):
     adv_size_min: Optional[float] = None
     adv_size_max: Optional[float] = None
 
-@app.post("/api/judgments")
-def get_judgments_from_db(query: JudgmentSearchQuery):
+def build_search_conditions(query: JudgmentSearchQuery):
+    where_clauses = ["1=1"]
+    params = []
+
+    if query.court:
+        where_clauses.append("id LIKE %s")
+        params.append(f"{query.court}%") 
+    
+    # 支援連續 8 碼 (YYYYMMDD) 格式檢索
+    if query.start_date:
+        where_clauses.append("date >= %s")
+        params.append(query.start_date.replace('-', ''))
+    if query.end_date:
+        where_clauses.append("date <= %s")
+        params.append(query.end_date.replace('-', ''))
+    
+    if query.year:
+        if query.year == "其他年度":
+            current_roc_year = datetime.datetime.now().year - 1911
+            where_clauses.append("(year IS NULL OR year = '' OR CAST(NULLIF(year, '') AS INTEGER) <= %s)")
+            params.append(current_roc_year - 3)
+        else:
+            where_clauses.append("year = %s")
+            params.append(query.year)
+    
+    if query.keyword:
+        for kw in query.keyword.split():
+            where_clauses.append("(title LIKE %s OR content LIKE %s OR case_no LIKE %s OR id LIKE %s)")
+            params.extend([f"%{kw}%", f"%{kw}%", f"%{kw}%", f"%{kw}%"])
+    
+    if query.title_kw:
+        for kw in query.title_kw.split():
+            where_clauses.append("title LIKE %s")
+            params.append(f"%{kw}%")
+            
+    if query.content_kw:
+        s = query.content_kw.replace('+', ' + ').replace('-', ' - ').replace('&', ' & ').replace('(', ' ( ').replace(')', ' ) ')
+        tokens = [t for t in s.split() if t.strip()]
+        content_sql = []
+        for i, token in enumerate(tokens):
+            if token == '+': content_sql.append("OR")
+            elif token == '&': content_sql.append("AND")
+            elif token == '-':
+                if not content_sql or content_sql[-1] == '(': content_sql.append("NOT")
+                else: content_sql.append("AND NOT")
+            elif token == '(':
+                if i > 0 and tokens[i-1] not in ['+', '&', '-', '(']: content_sql.append("AND")
+                content_sql.append("(")
+            elif token == ')': content_sql.append(")")
+            else:
+                if i > 0 and tokens[i-1] not in ['+', '&', '-', '(']: content_sql.append("AND")
+                content_sql.append("content LIKE %s")
+                params.append(f"%{token}%")
+        
+        opens = content_sql.count('(')
+        closes = content_sql.count(')')
+        if opens > closes: content_sql.extend([")"] * (opens - closes))
+        if content_sql: where_clauses.append(f"({' '.join(content_sql)})")
+
+    # 利用 doc_type 虛擬欄位加速
+    if query.doc_type and query.doc_type in ["判決", "裁定"]:
+        where_clauses.append("doc_type = %s")
+        params.append(query.doc_type)
+
+    # 利用 case_category_name 虛擬欄位加速
+    if query.case_categories:
+        placeholders = ", ".join(["%s"] * len(query.case_categories))
+        where_clauses.append(f"case_category_name IN ({placeholders})")
+        params.extend(query.case_categories)
+
+    if query.adv_case_type:
+        where_clauses.append("case_type LIKE %s")
+        params.append(f"%{query.adv_case_type}%")
+        
+    if query.adv_no_start is not None:
+        where_clauses.append("NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::int >= %s")
+        params.append(query.adv_no_start)
+    if query.adv_no_end is not None:
+        where_clauses.append("NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::int <= %s")
+        params.append(query.adv_no_end)
+        
+    # 利用 size_kb 虛擬欄位加速
+    if query.adv_size_min is not None:
+        where_clauses.append("size_kb >= %s")
+        params.append(query.adv_size_min)
+    if query.adv_size_max is not None:
+        where_clauses.append("size_kb <= %s")
+        params.append(query.adv_size_max)
+
+    where_sql = " WHERE " + " AND ".join(where_clauses)
+    return where_sql, params
+
+# ==========================================
+# API 1：高速讀取前 10 筆資料 (前端秒出)
+# ==========================================
+@app.post("/api/judgments/list")
+def get_judgments_list(query: JudgmentSearchQuery):
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            where_clauses = ["1=1"]
-            params = []
-
-            if query.court:
-                where_clauses.append("id LIKE %s")
-                params.append(f"{query.court}%") 
-            if query.start_date:
-                where_clauses.append("date >= %s")
-                sd = query.start_date.replace('-', '')
-                if len(sd) == 8: sd = f"{sd[:4]}-{sd[4:6]}-{sd[6:8]}"
-                params.append(sd)
-                
-            if query.end_date:
-                where_clauses.append("date <= %s")
-                ed = query.end_date.replace('-', '')
-                if len(ed) == 8: ed = f"{ed[:4]}-{ed[4:6]}-{ed[6:8]}"
-                params.append(ed)
+            where_sql, params = build_search_conditions(query)
             
-            if query.year:
-                if query.year == "其他年度":
-                    current_roc_year = datetime.datetime.now().year - 1911
-                    # PostgreSQL 型別嚴謹，需排除空值並轉型
-                    where_clauses.append("(year IS NULL OR year = '' OR CAST(NULLIF(year, '') AS INTEGER) <= %s)")
-                    params.append(current_roc_year - 3)
-                else:
-                    where_clauses.append("year = %s")
-                    params.append(query.year)
+            order_clause = "ORDER BY date DESC"
+            if query.sort_type == "date_asc": order_clause = "ORDER BY date ASC"
+            elif query.sort_type == "no_desc": order_clause = "ORDER BY NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::int DESC NULLS LAST"
+            elif query.sort_type == "no_asc": order_clause = "ORDER BY NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::int ASC NULLS LAST"
+            elif query.sort_type == "size_desc": order_clause = "ORDER BY size_kb DESC"
+            elif query.sort_type == "size_asc": order_clause = "ORDER BY size_kb ASC"
             
-            if query.keyword:
-                for kw in query.keyword.split():
-                    # 將 MySQL MATCH AGAINST 替換為 PostgreSQL 的 LIKE 模糊搜尋 (搭配 trigram 索引)
-                    where_clauses.append("(title LIKE %s OR content LIKE %s OR case_no LIKE %s OR id LIKE %s)")
-                    params.extend([f"%{kw}%", f"%{kw}%", f"%{kw}%", f"%{kw}%"])
+            limit = 10
+            offset = (query.page - 1) * limit
+            data_sql = f"SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments {where_sql} {order_clause} LIMIT %s OFFSET %s"
             
-            if query.title_kw:
-                for kw in query.title_kw.split():
-                    where_clauses.append("title LIKE %s")
-                    params.append(f"%{kw}%")
-                    
-            if query.content_kw:
-                s = query.content_kw.replace('+', ' + ').replace('-', ' - ').replace('&', ' & ').replace('(', ' ( ').replace(')', ' ) ')
-                tokens = [t for t in s.split() if t.strip()]
-                content_sql = []
-                for i, token in enumerate(tokens):
-                    if token == '+': content_sql.append("OR")
-                    elif token == '&': content_sql.append("AND")
-                    elif token == '-':
-                        if not content_sql or content_sql[-1] == '(': content_sql.append("NOT")
-                        else: content_sql.append("AND NOT")
-                    elif token == '(':
-                        if i > 0 and tokens[i-1] not in ['+', '&', '-', '(']: content_sql.append("AND")
-                        content_sql.append("(")
-                    elif token == ')': content_sql.append(")")
-                    else:
-                        if i > 0 and tokens[i-1] not in ['+', '&', '-', '(']: content_sql.append("AND")
-                        content_sql.append("content LIKE %s")
-                        params.append(f"%{token}%")
-                
-                opens = content_sql.count('(')
-                closes = content_sql.count(')')
-                if opens > closes: content_sql.extend([")"] * (opens - closes))
-                if content_sql: where_clauses.append(f"({' '.join(content_sql)})")
+            cursor.execute(data_sql, tuple(params + [limit, offset]))
+            results = [dict(row) for row in cursor.fetchall()]
+        return {"data": results}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    finally:
+        if conn: conn.close()
 
-            if query.doc_type == "判決":
-                where_clauses.append("(content LIKE '判決%%' OR content LIKE '%%判決如下%%')")
-            elif query.doc_type == "裁定":
-                where_clauses.append("(content LIKE '裁定%%' OR content LIKE '%%裁定如下%%' OR content LIKE '支付命令%%')")
-
-            if query.case_categories:
-                cat_conditions = []
-                for cat in query.case_categories:
-                    if cat == "刑事": cat_conditions.append("(id LIKE '___M%%' OR content LIKE '%%刑事判決%%' OR content LIKE '%%刑事裁定%%' OR content LIKE '%%刑事簡易判決%%')")
-                    elif cat == "民事": cat_conditions.append("(id LIKE '___V%%' OR id LIKE '___E%%' OR content LIKE '%%民事判決%%' OR content LIKE '%%民事裁定%%' OR content LIKE '%%支付命令%%')")
-                    elif cat == "行政": cat_conditions.append("(id LIKE '___A%%' OR content LIKE '%%行政判決%%' OR content LIKE '%%行政裁定%%')")
-                    elif cat == "憲法": cat_conditions.append("(content LIKE '%%憲法法庭%%' OR content LIKE '%%憲法判決%%')")
-                    elif cat == "懲戒": cat_conditions.append("(content LIKE '%%懲戒法院%%' OR content LIKE '%%懲戒判決%%')")
-                if cat_conditions: where_clauses.append("(" + " OR ".join(cat_conditions) + ")")
-
-            if query.adv_case_type:
-                where_clauses.append("case_type LIKE %s")
-                params.append(f"%{query.adv_case_type}%")
-            if query.adv_no_start is not None:
-                where_clauses.append("case_no_int >= %s")
-                params.append(query.adv_no_start)
-            if query.adv_no_end is not None:
-                where_clauses.append("case_no_int <= %s")
-                params.append(query.adv_no_end)
-            if query.adv_size_min is not None:
-                # PostgreSQL 算字元長度用 length()
-                where_clauses.append("(length(content) * 2 / 1024) >= %s")
-                params.append(query.adv_size_min)
-            if query.adv_size_max is not None:
-                where_clauses.append("(length(content) * 2 / 1024) <= %s")
-                params.append(query.adv_size_max)
-
-            where_sql = " WHERE " + " AND ".join(where_clauses)
-
-            # ==============================================================
-            # 1. 總筆數 (PostgreSQL 計算)
-            # ==============================================================
-            if len(where_clauses) == 1:
-                # 無搜尋條件時，利用 pg_class 快速預估表資料量，避免首頁載入卡頓
+# ==========================================
+# API 2：背景計算統計與總數 (非同步載入)
+# ==========================================
+@app.post("/api/judgments/stats")
+def get_judgments_stats(query: JudgmentSearchQuery):
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            where_sql, params = build_search_conditions(query)
+            
+            if len(params) == 0:
                 cursor.execute("SELECT reltuples::bigint AS total FROM pg_class WHERE relname = 'judgments';")
                 schema_res = cursor.fetchone()
                 total_count = schema_res['total'] if schema_res and schema_res['total'] > 0 else 1234303
@@ -214,40 +240,13 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                 cursor.execute(count_sql, tuple(params))
                 total_count = cursor.fetchone()['total']
 
-            # ==============================================================
-            # 2. 當頁資料 
-            # ==============================================================
-            order_clause = "ORDER BY date DESC"
-            if query.sort_type == "date_asc": order_clause = "ORDER BY date ASC"
-            elif query.sort_type == "no_desc": order_clause = "ORDER BY case_no_int DESC NULLS LAST"
-            elif query.sort_type == "no_asc": order_clause = "ORDER BY case_no_int ASC NULLS LAST"
-            elif query.sort_type == "size_desc": order_clause = "ORDER BY length(content) DESC"
-            elif query.sort_type == "size_asc": order_clause = "ORDER BY length(content) ASC"
-            
-            limit = 10
-            offset = (query.page - 1) * limit
-            
-            data_sql = f"SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments {where_sql} {order_clause} LIMIT %s OFFSET %s"
-            data_params = params + [limit, offset]
-            cursor.execute(data_sql, tuple(data_params))
-            
-            # 將 DictRow 轉為標準 dict，讓前端正常接收 JSON
-            results = [dict(row) for row in cursor.fetchall()]
-
-            # ==============================================================
-            # 3. 側邊欄 Facets 過濾統計
-            # ==============================================================
             facets = {"courts": {}, "years": {}, "categories": {}}
-            
-            # 防呆優化：如果沒有搜尋條件，不要計算 Facets，避免首頁讀取逾時
-            if len(where_clauses) > 1:
+            if len(params) > 0:
                 try:
                     current_roc_year = datetime.datetime.now().year - 1911
                     
-                    # 統計年度
                     year_sql = f"SELECT year, COUNT(1) as count FROM judgments {where_sql} GROUP BY year"
                     cursor.execute(year_sql, tuple(params))
-                    
                     y_stats = {f"今年 ({current_roc_year})": 0, f"去年 ({current_roc_year-1})": 0, f"前年 ({current_roc_year-2})": 0, "其他年度": 0}
                     for row in cursor.fetchall():
                         y_str = row["year"]
@@ -261,35 +260,29 @@ def get_judgments_from_db(query: JudgmentSearchQuery):
                             y_stats["其他年度"] += row["count"]
                     facets["years"] = {k: v for k, v in y_stats.items() if v > 0}
                     
-                    # 統計法院 
-                    court_sql = f"SELECT court_code as court, COUNT(1) as count FROM judgments {where_sql} GROUP BY court_code"
+                    court_sql = f"SELECT SUBSTRING(id, 1, 3) as court, COUNT(1) as count FROM judgments {where_sql} GROUP BY SUBSTRING(id, 1, 3)"
                     cursor.execute(court_sql, tuple(params))
                     for row in cursor.fetchall():
                         if row["court"]:
                             facets["courts"][row["court"]] = row["count"]
                             
-                    # 統計案件類別
-                    cat_sql = f"SELECT category_code as cat, COUNT(1) as count FROM judgments {where_sql} GROUP BY category_code"
+                    cat_sql = f"SELECT case_category_name as cat, COUNT(1) as count FROM judgments {where_sql} GROUP BY case_category_name"
                     cursor.execute(cat_sql, tuple(params))
-                    cat_map = {"M": "刑事", "V": "民事", "E": "民事", "A": "行政", "P": "懲戒", "S": "憲法"}
                     for row in cursor.fetchall():
-                        c_name = cat_map.get(row["cat"])
-                        if c_name:
-                            facets["categories"][c_name] = facets["categories"].get(c_name, 0) + row["count"]
+                        c_name = row["cat"]
+                        if c_name and c_name != '其他':
+                            facets["categories"][c_name] = row["count"]
                 except Exception as e:
-                    print(f"統計資料抓取失敗: {e}")
+                    pass
             
-        return {"total": total_count, "data": results, "facets": facets}
+        return {"total": total_count, "facets": facets}
     except Exception as e:
-        error_msg = f"❌ 資料庫讀取失敗: {str(e)}"
-        print(error_msg)
-        return JSONResponse(status_code=500, content={"error": error_msg})
+        return JSONResponse(status_code=500, content={"error": str(e)})
     finally:
-        if conn:
-            conn.close()
+        if conn: conn.close()
 
 # ==========================================
-# 2. 爬蟲 API 區塊 (/api/get_history)
+# 2. 歷審紀錄爬蟲 API (/api/get_history)
 # ==========================================
 class JudgmentRequest(BaseModel):
     id: str
@@ -388,7 +381,7 @@ def get_history(req: JudgmentRequest):
     return {"history": history_results}
 
 # ==========================================
-# 3. AI 問答 API 區塊
+# 3. AI 智慧分析 API (/api/ask_multiple)
 # ==========================================
 class MultiQAQuery(BaseModel):
     judgments_content: list[str]
@@ -549,10 +542,7 @@ async def ask_ai_multiple(query: MultiQAQuery):
             category_res = await classify_chain.ainvoke({"text": sample_text})
             category = category_res.content.strip()
         except Exception as e:
-            print(f"⚠️ 分類失敗: {e}")
             category = "未知"
-            
-        print(f"🤖 AI 自動分類結果：[{category}]")
 
         if "刑事" in category:
             map_chain = criminal_map_prompt | llm
@@ -583,7 +573,6 @@ async def ask_ai_multiple(query: MultiQAQuery):
                 summary_res = await map_chain.ainvoke({"single_case_text": clean_case_text})
                 extracted_summaries.append(f"=== 【案件 {idx+1} 抽取資料】 ===\n{summary_res.content}\n")
             except Exception as single_err:
-                print(f"⚠️ 案件 {idx+1} 擷取失敗: {single_err}")
                 extracted_summaries.append(f"=== 【案件 {idx+1} 抽取資料】 ===\n（此案件抽取失敗，略過）\n")
 
         combined_context = "\n".join(extracted_summaries)
@@ -596,7 +585,6 @@ async def ask_ai_multiple(query: MultiQAQuery):
         return {"answer": final_response.content}
 
     except Exception as e:
-        print(f"❌ 處理發生錯誤: {e}")
         return {"answer": f"本地 AI 處理失敗，錯誤詳情：{str(e)}"}
 
 if __name__ == "__main__":
