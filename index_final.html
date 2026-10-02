@@ -178,16 +178,37 @@
             "HLD": "臺灣花蓮地方法院", "ILD": "臺灣宜蘭地方法院", "KLD": "臺灣基隆地方法院",
             "PHD": "臺灣澎湖地方法院", "KMD": "福建金門地方法院", "LCD": "福建連江地方法院",
             "CTD": "臺灣橋頭地方法院", "ULD": "臺灣雲林地方法院", 
-            "CLE": "臺灣桃園地方法院中壢簡易庭", "TYE": "臺灣桃園地方法院桃園簡易庭",
+            
+            // --- 北部簡易庭 ---
+            "TPE": "臺灣臺北地方法院臺北簡易庭", "SDE": "臺灣臺北地方法院新店簡易庭",
+            "SLE": "臺灣士林地方法院士林簡易庭", "NIE": "臺灣士林地方法院內湖簡易庭", "NHE": "臺灣臺北地方法院內湖簡易庭",
             "PCE": "臺灣新北地方法院板橋簡易庭", "STE": "臺灣新北地方法院三重簡易庭",
-            "TPE": "臺灣臺北地方法院臺北簡易庭", "SLE": "臺灣士林地方法院士林簡易庭",
-            "NIE": "臺灣士林地方法院內湖簡易庭", "NHE": "臺灣臺北地方法院內湖簡易庭",
-            "SDE": "臺灣臺北地方法院新店簡易庭", "ILE": "臺灣宜蘭地方法院宜蘭簡易庭",
-            "LTE": "臺灣宜蘭地方法院羅東簡易庭", "KSE": "臺灣高雄地方法院高雄簡易庭",
-            "FSE": "臺灣高雄地方法院鳳山簡易庭", "CPE": "臺灣屏東地方法院潮州簡易庭",
-            "FYE": "臺灣臺中地方法院豐原簡易庭", "TCE": "臺灣臺中地方法院臺中簡易庭",
-            "PKE": "臺灣彰化地方法院北斗簡易庭", "HUE": "臺灣雲林地方法院虎尾簡易庭",
-            "MKE": "臺灣澎湖地方法院馬公簡易庭", "KME": "福建金門地方法院金城簡易庭",
+            "KLE": "臺灣基隆地方法院基隆簡易庭", 
+            "TYE": "臺灣桃園地方法院桃園簡易庭", "CLE": "臺灣桃園地方法院中壢簡易庭",
+            "SJE": "臺灣新竹地方法院新竹簡易庭", "CDE": "臺灣新竹地方法院竹東簡易庭",
+            
+            // --- 中部簡易庭 ---
+            "MLE": "臺灣苗栗地方法院苗栗簡易庭",
+            "TCE": "臺灣臺中地方法院臺中簡易庭", "FYE": "臺灣臺中地方法院豐原簡易庭", "CSE": "臺灣臺中地方法院清水簡易庭", 
+            "CHE": "臺灣彰化地方法院彰化簡易庭", "YLE": "臺灣彰化地方法院員林簡易庭", "PDE": "臺灣彰化地方法院北斗簡易庭", "OLE": "臺灣彰化地方法院員林簡易庭",
+            "NTE": "臺灣南投地方法院南投簡易庭", "PLE": "臺灣南投地方法院埔里簡易庭",
+            "ULE": "臺灣雲林地方法院雲林簡易庭", "TLE": "臺灣雲林地方法院斗六簡易庭", "HUE": "臺灣雲林地方法院虎尾簡易庭", "PKE": "臺灣雲林地方法院北港簡易庭",
+            "CYE": "臺灣嘉義地方法院嘉義簡易庭", "PZE": "臺灣嘉義地方法院朴子簡易庭",
+            
+            // --- 南部簡易庭 ---
+            "TNE": "臺灣臺南地方法院臺南簡易庭", "SYE": "臺灣臺南地方法院新營簡易庭", "SSE": "臺灣臺南地方法院新市簡易庭", "LYE": "臺灣臺南地方法院柳營簡易庭",
+            "KSE": "臺灣高雄地方法院高雄簡易庭", "FSE": "臺灣高雄地方法院鳳山簡易庭", "GSE": "臺灣橋頭地方法院岡山簡易庭", "CCE": "臺灣橋頭地方法院橋頭簡易庭", "CTE": "臺灣橋頭地方法院橋頭簡易庭",
+            "PTE": "臺灣屏東地方法院屏東簡易庭", "CPE": "臺灣屏東地方法院潮州簡易庭",
+            
+            // --- 東部與外島簡易庭 ---
+            "ILE": "臺灣宜蘭地方法院宜蘭簡易庭", "LTE": "臺灣宜蘭地方法院羅東簡易庭",
+            "HLE": "臺灣花蓮地方法院花蓮簡易庭", 
+            "TTE": "臺灣臺東地方法院臺東簡易庭",
+            "MKE": "臺灣澎湖地方法院馬公簡易庭", 
+            "KME": "福建金門地方法院金城簡易庭", 
+            "LCE": "福建連江地方法院連江簡易庭",
+            
+            // --- 其他專業法院 ---
             "KSY": "臺灣高雄少年及家事法院", "IPC": "智慧財產及商業法院"
         };
 
@@ -304,7 +325,7 @@
         }
 
         function handleSortChange() {
-            fetchJudgments(1);
+            fetchJudgments(1,false);
         }
 
         function resetSearch() {
@@ -360,7 +381,8 @@
 
         function renderFacets(facets) {
             const sidebar = document.getElementById('facetSidebar');
-            
+            sidebar.style.opacity = '1';
+
             if (totalItems === 0 || !facets || Object.keys(facets.courts || {}).length === 0) {
                 sidebar.style.display = 'none';
                 return;
@@ -427,16 +449,21 @@
         }
 
         // 非同步分批抓取核心邏輯
-        async function fetchJudgments(page = 1) {
-            currentSearchPayload.page = page;
-            currentSearchPayload.sort_type = document.getElementById('tableSortSelect')?.value || "date_desc";
+        async function fetchJudgments(page = 1, refreshStats = true) {
+                currentSearchPayload.page = page;
+                currentSearchPayload.sort_type = document.getElementById('tableSortSelect')?.value || "date_desc";
 
-            try {
-                document.getElementById('results').innerHTML = '<p>⏳ 正在從資料庫撈取前 10 筆資料，請稍候...</p>';
-                const sidebar = document.getElementById('facetSidebar');
-                sidebar.style.display = 'block';
-                sidebar.innerHTML = '<p style="padding: 15px; color: #666; font-weight: bold;">⏳ 全庫資料統計中...</p>';
-                
+                try {
+                    document.getElementById('results').innerHTML = '<p>⏳ 正在從資料庫撈取前 10 筆資料，請稍候...</p>';
+                    const sidebar = document.getElementById('facetSidebar');
+                    if (refreshStats) {
+                        sidebar.style.display = 'block';
+                        if (sidebar.innerHTML.trim() === '') {
+                            sidebar.innerHTML = '<p style="padding: 15px; color: #666; font-weight: bold;">⏳ 全庫資料統計中...</p>';
+                        } else {
+                            sidebar.style.opacity = '0.5';   // 保留舊的統計，先變淡
+                        }
+                    }
                 // 第一階段：高速獲取當頁 10 筆
                 const listResponse = await fetch('/api/judgments/list', {
                     method: 'POST',
@@ -456,18 +483,20 @@
                 displayResults();
                 
                 // 第二階段：背景撈取統計與總筆數
-                const statsResponse = await fetch('/api/judgments/stats', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(currentSearchPayload)
-                });
-                
-                const statsData = await statsResponse.json();
-                totalItems = statsData.total;
-                
-                displayResults();
-                
-                if (statsData.facets) renderFacets(statsData.facets);
+                if (refreshStats) {
+                    const statsResponse = await fetch('/api/judgments/stats', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(currentSearchPayload)
+                    });
+
+                    const statsData = await statsResponse.json();
+                    totalItems = statsData.total;
+
+                    displayResults();
+
+                    if (statsData.facets) renderFacets(statsData.facets);
+                }
                 
             } catch(e) {
                 console.error(e);
@@ -676,7 +705,7 @@
             if (newPage > totalPages) newPage = totalPages;
             
             if (newPage !== currentPage) {
-                fetchJudgments(newPage).then(() => {
+                fetchJudgments(newPage,false).then(() => {
                     document.querySelector('.search-box').scrollIntoView({ behavior: 'smooth', block: 'start' });
                 });
             }

@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import asyncio
 import psycopg2
@@ -60,6 +61,13 @@ db_pool = PooledDB(
     cursor_factory=psycopg2.extras.DictCursor 
 )
 
+_stats_cache = {}
+CACHE_TTL = 600  # 秒
+MAX_CACHE_ITEMS = 200
+
+def stats_cache_key(query: "JudgmentSearchQuery") -> str:
+    d = query.model_dump(exclude={"page", "sort_type"})
+    return json.dumps(d, sort_keys=True, ensure_ascii=False)
 def get_db_connection():
     return db_pool.connection()
 
@@ -232,57 +240,69 @@ def get_judgments_list(query: JudgmentSearchQuery):
 # ==========================================
 @app.post("/api/judgments/stats")
 def get_judgments_stats(query: JudgmentSearchQuery):
+    key = stats_cache_key(query)
+    hit = _stats_cache.get(key)
+    if hit and time.time() - hit[0] < CACHE_TTL:
+        return hit[1]
+
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
             where_sql, params = build_search_conditions(query)
-            
+            facets = {"courts": {}, "years": {}, "categories": {}}
+
             if len(params) == 0:
                 cursor.execute("SELECT reltuples::bigint AS total FROM pg_class WHERE relname = 'judgments';")
                 schema_res = cursor.fetchone()
                 total_count = schema_res['total'] if schema_res and schema_res['total'] > 0 else 1234303
             else:
-                count_sql = f"SELECT COUNT(1) as total FROM judgments {where_sql}"
-                cursor.execute(count_sql, tuple(params))
-                total_count = cursor.fetchone()['total']
+                current_roc_year = datetime.datetime.now().year - 1911
+                y_label = {
+                    current_roc_year: f"今年 ({current_roc_year})",
+                    current_roc_year - 1: f"去年 ({current_roc_year-1})",
+                    current_roc_year - 2: f"前年 ({current_roc_year-2})",
+                }
+                y_stats = {v: 0 for v in y_label.values()}
+                y_stats["其他年度"] = 0
+                total_count = 0
 
-            facets = {"courts": {}, "years": {}, "categories": {}}
-            if len(params) > 0:
-                try:
-                    current_roc_year = datetime.datetime.now().year - 1911
-                    
-                    year_sql = f"SELECT year, COUNT(1) as count FROM judgments {where_sql} GROUP BY year"
-                    cursor.execute(year_sql, tuple(params))
-                    y_stats = {f"今年 ({current_roc_year})": 0, f"去年 ({current_roc_year-1})": 0, f"前年 ({current_roc_year-2})": 0, "其他年度": 0}
-                    for row in cursor.fetchall():
-                        y_str = row["year"]
-                        if y_str and str(y_str).strip().isdigit():
-                            y = int(str(y_str).strip())
-                            if y == current_roc_year: y_stats[f"今年 ({current_roc_year})"] += row["count"]
-                            elif y == current_roc_year - 1: y_stats[f"去年 ({current_roc_year-1})"] += row["count"]
-                            elif y == current_roc_year - 2: y_stats[f"前年 ({current_roc_year-2})"] += row["count"]
-                            else: y_stats["其他年度"] += row["count"]
+                # 一次掃描，同時算出：年度分布、法院分布、類別分布、總筆數
+                cursor.execute(f"""
+                    SELECT year,
+                           SUBSTRING(id, 1, 3) AS court,
+                           case_category_name AS cat,
+                           GROUPING(year) AS g_year,
+                           GROUPING(SUBSTRING(id, 1, 3)) AS g_court,
+                           GROUPING(case_category_name) AS g_cat,
+                           COUNT(*) AS cnt
+                    FROM judgments {where_sql}
+                    GROUP BY GROUPING SETS ((year), (SUBSTRING(id, 1, 3)), (case_category_name), ())
+                """, tuple(params))
+
+                for row in cursor.fetchall():
+                    if row["g_year"] == 0:
+                        y_str = str(row["year"] or "").strip()
+                        if y_str.isdigit() and int(y_str) in y_label:
+                            y_stats[y_label[int(y_str)]] += row["cnt"]
                         else:
-                            y_stats["其他年度"] += row["count"]
-                    facets["years"] = {k: v for k, v in y_stats.items() if v > 0}
-                    
-                    court_sql = f"SELECT SUBSTRING(id, 1, 3) as court, COUNT(1) as count FROM judgments {where_sql} GROUP BY SUBSTRING(id, 1, 3)"
-                    cursor.execute(court_sql, tuple(params))
-                    for row in cursor.fetchall():
+                            y_stats["其他年度"] += row["cnt"]
+                    elif row["g_court"] == 0:
                         if row["court"]:
-                            facets["courts"][row["court"]] = row["count"]
-                            
-                    cat_sql = f"SELECT case_category_name as cat, COUNT(1) as count FROM judgments {where_sql} GROUP BY case_category_name"
-                    cursor.execute(cat_sql, tuple(params))
-                    for row in cursor.fetchall():
-                        c_name = row["cat"]
-                        if c_name and c_name != '其他':
-                            facets["categories"][c_name] = row["count"]
-                except Exception as e:
-                    pass
-            
-        return {"total": total_count, "facets": facets}
+                            facets["courts"][row["court"]] = row["cnt"]
+                    elif row["g_cat"] == 0:
+                        if row["cat"] and row["cat"] != '其他':
+                            facets["categories"][row["cat"]] = row["cnt"]
+                    else:
+                        total_count = row["cnt"]
+
+                facets["years"] = {k: v for k, v in y_stats.items() if v > 0}
+
+        result = {"total": total_count, "facets": facets}
+        if len(_stats_cache) >= MAX_CACHE_ITEMS:
+            _stats_cache.pop(next(iter(_stats_cache)))
+        _stats_cache[key] = (time.time(), result)
+        return result
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
     finally:
