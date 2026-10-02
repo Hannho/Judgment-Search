@@ -129,3 +129,22 @@ body { font-family: "微軟正黑體", Arial, sans-serif; max-width: 96%; margin
         }
         .facet-list li:hover { background: #f9fbe7; font-weight: bold; }
         .facet-badge { background: #2e7d32; color: white; border-radius: 12px; padding: 2px 8px; font-size: 0.85em; font-weight: bold;}
+    .modal-overlay {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.5); display: none;
+        align-items: center; justify-content: center; z-index: 1000;
+    }
+    .modal-content {
+        background: white; padding: 20px; border-radius: 8px;
+        width: 400px; max-width: 90%; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .modal-header { font-size: 1.2em; font-weight: bold; margin-bottom: 15px; display: flex; justify-content: space-between; }
+    .modal-close { cursor: pointer; color: #666; }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 5px; color: #555; }
+    .form-group input[type="text"], .form-group select, .form-group textarea {
+        width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;
+    }
+    .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+    .btn-secondary { padding: 8px 15px; border: 1px solid #ccc; background: #f9f9f9; border-radius: 4px; cursor: pointer; }
+    .folder-filter { margin-bottom: 15px; padding: 10px; background: #f0f4c3; border-radius: 5px; }
