@@ -5,7 +5,7 @@ import asyncio
 import psycopg2
 import psycopg2.extras
 import datetime
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -68,6 +68,7 @@ MAX_CACHE_ITEMS = 200
 def stats_cache_key(query: "JudgmentSearchQuery") -> str:
     d = query.model_dump(exclude={"page", "sort_type"})
     return json.dumps(d, sort_keys=True, ensure_ascii=False)
+
 def get_db_connection():
     return db_pool.connection()
 
@@ -78,8 +79,6 @@ def get_db_connection():
 def read_index():
     if os.path.exists("index_final.html"):
         return FileResponse("index_final.html")
-    elif os.path.exists("index_final_4.html"):
-        return FileResponse("index_final_4.html")
     return {"message": "HTML template not found"}
 
 @app.get("/style.css")
@@ -115,7 +114,6 @@ def build_search_conditions(query: JudgmentSearchQuery):
         where_clauses.append("id LIKE %s")
         params.append(f"{query.court}%") 
     
-    # 支援連續 8 碼 (YYYYMMDD) 格式檢索
     if query.start_date:
         where_clauses.append("date >= %s")
         params.append(query.start_date.replace('-', ''))
@@ -171,12 +169,10 @@ def build_search_conditions(query: JudgmentSearchQuery):
         if opens > closes: content_sql.extend([")"] * (opens - closes))
         if content_sql: where_clauses.append(f"({' '.join(content_sql)})")
 
-    # 利用 doc_type 虛擬欄位加速
     if query.doc_type and query.doc_type in ["判決", "裁定"]:
         where_clauses.append("doc_type = %s")
         params.append(query.doc_type)
 
-    # 利用 case_category_name 虛擬欄位加速
     if query.case_categories:
         placeholders = ", ".join(["%s"] * len(query.case_categories))
         where_clauses.append(f"case_category_name IN ({placeholders})")
@@ -193,7 +189,6 @@ def build_search_conditions(query: JudgmentSearchQuery):
         where_clauses.append("NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::int <= %s")
         params.append(query.adv_no_end)
         
-    # 利用 size_kb 虛擬欄位加速
     if query.adv_size_min is not None:
         where_clauses.append("size_kb >= %s")
         params.append(query.adv_size_min)
@@ -224,7 +219,6 @@ def get_judgments_list(query: JudgmentSearchQuery):
             
             limit = 10
             offset = (query.page - 1) * limit
-            # 撈取 main_text 欄位供前端無搜尋條件時直接顯示主文
             data_sql = f"SELECT id, year, case_type, case_no, date, title, content, pdf_url, main_text FROM judgments {where_sql} {order_clause} LIMIT %s OFFSET %s"
             
             cursor.execute(data_sql, tuple(params + [limit, offset]))
@@ -234,6 +228,221 @@ def get_judgments_list(query: JudgmentSearchQuery):
         return JSONResponse(status_code=500, content={"error": str(e)})
     finally:
         if conn: conn.close()
+
+# ==========================================
+# API 1-2：依判決 id 取回資料 (我的最愛 / 批次查詢用)
+# ==========================================
+class IdsQuery(BaseModel):
+    ids: List[str]
+
+@app.post("/api/judgments/by_ids")
+def get_judgments_by_ids(q: IdsQuery):
+    ids = q.ids[:200]
+    if not ids:
+        return {"data": []}
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, year, case_type, case_no, date, title, content, pdf_url, main_text "
+                "FROM judgments WHERE id = ANY(%s)",
+                (ids,)
+            )
+            rows = {r["id"]: dict(r) for r in cursor.fetchall()}
+        return {"data": [rows[i] for i in ids if i in rows]}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    finally:
+        if conn: conn.close()
+
+# ==========================================
+# 使用者、資料夾、我的最愛 與 畫重點
+# ==========================================
+def run_sql(sql, params=(), fetch=False):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = [dict(r) for r in cur.fetchall()] if fetch else None
+        conn.commit()
+        return rows
+    finally:
+        conn.close()
+
+def init_user_tables():
+    run_sql("""
+        CREATE TABLE IF NOT EXISTS app_users (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            created_at TIMESTAMPTZ DEFAULT now()
+        );
+        CREATE TABLE IF NOT EXISTS folders (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            UNIQUE(user_id, name)
+        );
+        CREATE TABLE IF NOT EXISTS favorites (
+            user_id INTEGER NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+            judgment_id TEXT NOT NULL,
+            folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL,
+            note TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ DEFAULT now(),
+            PRIMARY KEY (user_id, judgment_id)
+        );
+        -- 畫重點用資料表
+        CREATE TABLE IF NOT EXISTS highlights (
+            user_id INTEGER NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+            judgment_id TEXT NOT NULL,
+            highlights_json TEXT NOT NULL DEFAULT '[]',
+            PRIMARY KEY (user_id, judgment_id)
+        );
+    """)
+
+@app.on_event("startup")
+def on_startup():
+    try:
+        init_user_tables()
+    except Exception as e:
+        print(f"⚠️ 建立資料表失敗：{e}")
+
+def get_uid(x_user_id: Optional[str]) -> int:
+    if not x_user_id or not x_user_id.isdigit():
+        raise HTTPException(status_code=401, detail="請先選擇使用者")
+    return int(x_user_id)
+
+class UserCreate(BaseModel):
+    name: str
+
+class FolderCreate(BaseModel):
+    name: str
+
+class FavIn(BaseModel):
+    judgment_id: str
+    folder_id: Optional[int] = None
+    note: str = ""
+
+class UserUpdate(BaseModel):
+    name: str
+
+class HighlightData(BaseModel):
+    highlights: list
+
+@app.get("/api/users")
+def list_users():
+    return {"data": run_sql("SELECT id, name FROM app_users ORDER BY id", fetch=True)}
+
+@app.post("/api/users")
+def create_user(u: UserCreate):
+    name = u.name.strip()
+    if not name or len(name) > 30:
+        return JSONResponse(status_code=400, content={"error": "名稱需為 1 到 30 個字"})
+    run_sql("INSERT INTO app_users (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (name,))
+    row = run_sql("SELECT id, name FROM app_users WHERE name = %s", (name,), fetch=True)[0]
+    return {"user": row}
+
+@app.put("/api/users/{user_id}")
+def update_user(user_id: int, u: UserUpdate):
+    name = u.name.strip()
+    if not name or len(name) > 30:
+        return JSONResponse(status_code=400, content={"error": "名稱需為 1 到 30 個字"})
+    try:
+        run_sql("UPDATE app_users SET name = %s WHERE id = %s", (name, user_id))
+        return {"ok": True}
+    except Exception as e:
+        if "unique constraint" in str(e).lower():
+            return JSONResponse(status_code=400, content={"error": "該使用者名稱已被其他人使用"})
+        return JSONResponse(status_code=500, content={"error": "更新使用者失敗"})
+
+@app.delete("/api/users/{user_id}")
+def delete_user(user_id: int):
+    try:
+        run_sql("DELETE FROM app_users WHERE id = %s", (user_id,))
+        return {"ok": True}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": "刪除使用者失敗"})
+
+# --- 資料夾 API ---
+@app.get("/api/folders")
+def list_folders(x_user_id: Optional[str] = Header(None)):
+    uid = get_uid(x_user_id)
+    rows = run_sql("SELECT id, name FROM folders WHERE user_id = %s ORDER BY id", (uid,), fetch=True)
+    return {"data": rows}
+
+@app.post("/api/folders")
+def create_folder(f: FolderCreate, x_user_id: Optional[str] = Header(None)):
+    uid = get_uid(x_user_id)
+    name = f.name.strip()
+    if not name:
+        return JSONResponse(status_code=400, content={"error": "資料夾名稱不能為空"})
+    try:
+        run_sql("INSERT INTO folders (user_id, name) VALUES (%s, %s) ON CONFLICT DO NOTHING", (uid, name))
+        row = run_sql("SELECT id, name FROM folders WHERE user_id = %s AND name = %s", (uid, name), fetch=True)[0]
+        return {"folder": row}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": "建立資料夾失敗"})
+
+# --- 收藏 API ---
+@app.get("/api/favorites")
+def list_favorites(x_user_id: Optional[str] = Header(None)):
+    uid = get_uid(x_user_id)
+    rows = run_sql("""
+        SELECT f.judgment_id, f.note, f.folder_id, fd.name as folder_name
+        FROM favorites f
+        LEFT JOIN folders fd ON f.folder_id = fd.id
+        WHERE f.user_id = %s 
+        ORDER BY f.created_at DESC
+    """, (uid,), fetch=True)
+    return {"data": rows}
+
+@app.post("/api/favorites")
+def add_favorite(f: FavIn, x_user_id: Optional[str] = Header(None)):
+    uid = get_uid(x_user_id)
+    run_sql("""
+        INSERT INTO favorites (user_id, judgment_id, folder_id, note) 
+        VALUES (%s, %s, %s, %s) 
+        ON CONFLICT (user_id, judgment_id) DO UPDATE 
+        SET folder_id = EXCLUDED.folder_id, note = EXCLUDED.note
+    """, (uid, f.judgment_id, f.folder_id, f.note[:500]))
+    return {"ok": True}
+
+@app.delete("/api/favorites")
+def remove_favorite(judgment_id: str, x_user_id: Optional[str] = Header(None)):
+    uid = get_uid(x_user_id)
+    run_sql("DELETE FROM favorites WHERE user_id = %s AND judgment_id = %s", (uid, judgment_id))
+    return {"ok": True}
+
+# --- 畫重點 API ---
+@app.get("/api/highlights/{judgment_id}")
+def get_highlights(judgment_id: str, x_user_id: Optional[str] = Header(None)):
+    try:
+        uid = get_uid(x_user_id)
+        rows = run_sql("SELECT highlights_json FROM highlights WHERE user_id = %s AND judgment_id = %s", (uid, judgment_id), fetch=True)
+        if rows:
+            return {"data": json.loads(rows[0]["highlights_json"])}
+        return {"data": []}
+    except Exception:
+        return {"data": []}
+
+@app.post("/api/highlights/{judgment_id}")
+def save_highlights(judgment_id: str, payload: HighlightData, x_user_id: Optional[str] = Header(None)):
+    uid = get_uid(x_user_id)
+    hl_json = json.dumps(payload.highlights)
+    run_sql("""
+        INSERT INTO highlights (user_id, judgment_id, highlights_json) 
+        VALUES (%s, %s, %s) 
+        ON CONFLICT (user_id, judgment_id) DO UPDATE 
+        SET highlights_json = EXCLUDED.highlights_json
+    """, (uid, judgment_id, hl_json))
+    return {"ok": True}
+
+@app.delete("/api/highlights/{judgment_id}")
+def clear_highlights(judgment_id: str, x_user_id: Optional[str] = Header(None)):
+    uid = get_uid(x_user_id)
+    run_sql("DELETE FROM highlights WHERE user_id = %s AND judgment_id = %s", (uid, judgment_id))
+    return {"ok": True}
 
 # ==========================================
 # API 2：背景計算統計與總數 (非同步載入)
@@ -267,7 +476,6 @@ def get_judgments_stats(query: JudgmentSearchQuery):
                 y_stats["其他年度"] = 0
                 total_count = 0
 
-                # 一次掃描，同時算出：年度分布、法院分布、類別分布、總筆數
                 cursor.execute(f"""
                     SELECT year,
                            SUBSTRING(id, 1, 3) AS court,
@@ -330,13 +538,29 @@ COURT_MAPPING = {
     "KSD": "臺灣高雄地方法院", "PTD": "臺灣屏東地方法院", "TTD": "臺灣臺東地方法院",
     "HLD": "臺灣花蓮地方法院", "ILD": "臺灣宜蘭地方法院", "KLD": "臺灣基隆地方法院",
     "PHD": "臺灣澎湖地方法院", "KMD": "福建金門地方法院", "LCD": "福建連江地方法院",
-    "CLE": "臺灣桃園地方法院中壢簡易庭", "TYE": "臺灣桃園地方法院桃園簡易庭",
+    "CTD": "臺灣橋頭地方法院", "ULD": "臺灣雲林地方法院", 
+    "TPE": "臺灣臺北地方法院臺北簡易庭", "SDE": "臺灣臺北地方法院新店簡易庭",
+    "SLE": "臺灣士林地方法院士林簡易庭", "NIE": "臺灣士林地方法院內湖簡易庭", "NHE": "臺灣臺北地方法院內湖簡易庭",
     "PCE": "臺灣新北地方法院板橋簡易庭", "STE": "臺灣新北地方法院三重簡易庭",
-    "TPE": "臺灣臺北地方法院臺北簡易庭", "SLE": "臺灣士林地方法院士林簡易庭",
-    "NIE": "臺灣士林地方法院內湖簡易庭", "ILE": "臺灣宜蘭地方法院宜蘭簡易庭",
-    "LTE": "臺灣宜蘭地方法院羅東簡易庭", "KSE": "臺灣高雄地方法院高雄簡易庭",
-    "FSE": "臺灣高雄地方法院鳳山簡易庭", "KSY": "臺灣高雄少年及家事法院", 
-    "IPC": "智慧財產及商業法院"
+    "KLE": "臺灣基隆地方法院基隆簡易庭", 
+    "TYE": "臺灣桃園地方法院桃園簡易庭", "CLE": "臺灣桃園地方法院中壢簡易庭",
+    "SJE": "臺灣新竹地方法院新竹簡易庭", "CDE": "臺灣新竹地方法院竹東簡易庭",
+    "MLE": "臺灣苗栗地方法院苗栗簡易庭",
+    "TCE": "臺灣臺中地方法院臺中簡易庭", "FYE": "臺灣臺中地方法院豐原簡易庭", "CSE": "臺灣臺中地方法院清水簡易庭", 
+    "CHE": "臺灣彰化地方法院彰化簡易庭", "YLE": "臺灣彰化地方法院員林簡易庭", "PDE": "臺灣彰化地方法院北斗簡易庭", "OLE": "臺灣彰化地方法院員林簡易庭",
+    "NTE": "臺灣南投地方法院南投簡易庭", "PLE": "臺灣南投地方法院埔里簡易庭",
+    "ULE": "臺灣雲林地方法院雲林簡易庭", "TLE": "臺灣雲林地方法院斗六簡易庭", "HUE": "臺灣雲林地方法院虎尾簡易庭", "PKE": "臺灣雲林地方法院北港簡易庭",
+    "CYE": "臺灣嘉義地方法院嘉義簡易庭", "PZE": "臺灣嘉義地方法院朴子簡易庭",
+    "TNE": "臺灣臺南地方法院臺南簡易庭", "SYE": "臺灣臺南地方法院新營簡易庭", "SSE": "臺灣臺南地方法院新市簡易庭", "LYE": "臺灣臺南地方法院柳營簡易庭",
+    "KSE": "臺灣高雄地方法院高雄簡易庭", "FSE": "臺灣高雄地方法院鳳山簡易庭", "GSE": "臺灣橋頭地方法院岡山簡易庭", "CCE": "臺灣橋頭地方法院橋頭簡易庭", "CTE": "臺灣橋頭地方法院橋頭簡易庭",
+    "PTE": "臺灣屏東地方法院屏東簡易庭", "CPE": "臺灣屏東地方法院潮州簡易庭",
+    "ILE": "臺灣宜蘭地方法院宜蘭簡易庭", "LTE": "臺灣宜蘭地方法院羅東簡易庭",
+    "HLE": "臺灣花蓮地方法院花蓮簡易庭", 
+    "TTE": "臺灣臺東地方法院臺東簡易庭",
+    "MKE": "臺灣澎湖地方法院馬公簡易庭", 
+    "KME": "福建金門地方法院金城簡易庭", 
+    "LCE": "福建連江地方法院連江簡易庭",
+    "KSY": "臺灣高雄少年及家事法院", "IPC": "智慧財產及商業法院"
 }
 
 @app.post("/api/get_history")
@@ -424,7 +648,7 @@ classify_prompt = ChatPromptTemplate.from_messages([
 ])
 
 civil_map_prompt = ChatPromptTemplate.from_messages([
-    ("system", "你是一位專業的法院司法助理。請從以下提供的【單篇民事裁判書】中精確擷取資訊。\n"
+    ("system", "你是一位專業的法院司法助理。請從以下提供的【單篇民事裁判書】中精精確擷取資訊。\n"
                "【重要原則】：只記錄文中明確記載的內容，禁止臆測；若未提及請填寫「判決未載明」。\n\n"
                "請依固定格式輸出：\n"
                "判決字號與案由：\n"

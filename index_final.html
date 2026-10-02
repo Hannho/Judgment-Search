@@ -5,9 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>裁判書搜尋與歷審查詢系統</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); display: none;
+            align-items: center; justify-content: center; z-index: 1000;
+        }
+        .modal-content {
+            background: white; padding: 20px; border-radius: 8px;
+            width: 400px; max-width: 90%; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .modal-header { font-size: 1.2em; font-weight: bold; margin-bottom: 15px; display: flex; justify-content: space-between; }
+        .modal-close { cursor: pointer; color: #666; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; color: #555; }
+        .form-group input[type="text"], .form-group select, .form-group textarea {
+            width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;
+        }
+        .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        .btn-secondary { padding: 8px 15px; border: 1px solid #ccc; background: #f9f9f9; border-radius: 4px; cursor: pointer; }
+    </style>
 </head>
 <body>
 
+    <div style="float:right; font-size:0.95em;">
+        👤 <select id="userSelect" onchange="onUserChange(this)"></select>
+        <button class="btn-toggle" type="button" onclick="editUser()" title="修改目前使用者的名稱">✏️ 編輯</button>
+        <button class="btn-toggle" type="button" onclick="deleteUser()" style="color: #d32f2f; border-color: #ffcdd2; background: #ffebee;" title="刪除目前使用者">🗑️ 刪除</button>
+        <button class="btn-toggle" type="button" onclick="addUser()">＋ 新增使用者</button>
+    </div>
     <h2>⚖️ 裁判書搜尋與歷審查詢系統</h2>
 
     <!-- 搜尋條件區塊 -->
@@ -18,6 +44,7 @@
             <button class="btn-primary" onclick="searchJudgments()">🔍 開始搜尋</button>
             <button class="btn-toggle" type="button" onclick="toggleAdvancedSearch()">⚙️ <span id="toggleText">展開進階搜尋</span></button>
             <button class="btn-reset" type="button" onclick="resetSearch()">重設</button>
+            <button class="btn-toggle" type="button" onclick="enterFavorites()">📁 案件資料夾 <span id="favCount">(0)</span></button>
         </div>
 
         <div id="searchErrorMessage" class="alert-error"></div>
@@ -118,8 +145,14 @@
                 </div>
 
                 <!-- 彈出/下方：判決書詳情與歷審紀錄 -->
-                <div id="sidePanel" class="detail-panel">
+                    <div id="sidePanel" class="detail-panel">
                     <button class="close-panel-btn" onclick="closeSidePanel()" title="關閉全文">✖</button>
+                    <!-- 新增：畫重點操作提示與清除按鈕 -->
+                    <div style="float: right; margin-right: 40px; font-size: 0.85em; color: #555;">
+                        🖍️ 反白文字後按 <b>H</b> 畫重點
+                        <button class="btn-toggle" style="margin-left: 10px; padding: 2px 6px;" onclick="clearAllHighlights()">清除重點</button>
+                    </div>
+                    
                     <h3 id="sideTitle" style="color: #0000cc; margin-top: 0; padding-right: 35px;"></h3>
                     <div id="sideMeta" style="color: #666; font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 10px;"></div>
                     
@@ -157,6 +190,38 @@
 
     </div>
 
+    <!-- 收藏 Modal -->
+    <div id="favModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span id="favModalTitle">新增書籤</span>
+                <span class="modal-close" onclick="closeFavModal()">✖</span>
+            </div>
+            <input type="hidden" id="favJudgmentId">
+            <div class="form-group">
+                <label>判決字號</label>
+                <input type="text" id="favTitleDisplay" disabled style="background:#eee; color:#666;">
+            </div>
+            <div class="form-group">
+                <label>資料夾</label>
+                <div style="display: flex; gap: 5px;">
+                    <select id="favFolderSelect" style="flex: 1;">
+                        <option value="">（未分類）</option>
+                    </select>
+                    <button type="button" onclick="createNewFolder()" style="padding: 0 10px;">＋ 新增</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>備註</label>
+                <textarea id="favNoteInput" rows="3" placeholder="請輸入備註..."></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" id="btnRemoveFav" style="display:none; color:red; border-color:red;" onclick="removeFavFromModal()">移除</button>
+                <button type="button" class="btn-primary" onclick="saveFavFromModal()">完成</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let judgmentsData = [];
         let currentSearchKeywords = [];
@@ -164,6 +229,384 @@
         const itemsPerPage = 10;
         let totalItems = 0;
         let currentSearchPayload = {};
+
+        // ==========================================
+        // 使用者、資料夾與我的最愛
+        // ==========================================
+        let isFavoritesMode = false;
+        let currentUser = null;
+        let usersList = [];
+        let foldersList = [];       
+        let favMap = {};            
+        let currentSideId = null;
+
+        function apiHeaders() {
+            const h = { 'Content-Type': 'application/json' };
+            if (currentUser) h['X-User-Id'] = String(currentUser.id);
+            return h;
+        }
+        function isFav(id) { return Object.prototype.hasOwnProperty.call(favMap, id); }
+        function updateFavCount() {
+            const el = document.getElementById('favCount');
+            if (el) el.textContent = `(${Object.keys(favMap).length})`;
+        }
+        function updateSideStar() {
+            const el = document.getElementById('sideFavStar');
+            if (el && currentSideId) el.textContent = isFav(currentSideId) ? '⭐' : '☆';
+        }
+        function refreshListStars() {
+            document.querySelectorAll('.fav-star').forEach(el => {
+                el.textContent = isFav(el.dataset.id) ? '⭐' : '☆';
+            });
+        }
+        function refreshFavUI() {
+            updateFavCount();
+            updateSideStar();
+            if (isFavoritesMode) { showFavorites(); } else { refreshListStars(); }
+        }
+
+        // ---- 使用者 ----
+        async function loadUsers(selectId) {
+            try {
+                const res = await fetch('/api/users');
+                usersList = (await res.json()).data || [];
+            } catch (e) {
+                console.error(e);
+                usersList = [];
+            }
+            const sel = document.getElementById('userSelect');
+            sel.innerHTML = '<option value="">— 選擇使用者 —</option>' +
+                usersList.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+            const target = (selectId !== undefined) ? selectId : localStorage.getItem('current_user_id');
+            const u = usersList.find(x => String(x.id) === String(target)) || null;
+            sel.value = u ? u.id : "";
+            await applyUser(u);
+        }
+
+        async function applyUser(u) {
+            currentUser = u;
+            favMap = {};
+            foldersList = [];
+            if (u) {
+                localStorage.setItem('current_user_id', u.id);
+                try {
+                    await loadFolders();
+                    const res = await fetch('/api/favorites', { headers: apiHeaders() });
+                    ((await res.json()).data || []).forEach(f => {
+                        favMap[f.judgment_id] = { note: f.note, folder_id: f.folder_id, folder_name: f.folder_name };
+                    });
+                } catch (e) { console.error(e); }
+            } else {
+                localStorage.removeItem('current_user_id');
+            }
+            refreshFavUI();
+        }
+
+        // ---- 編輯使用者 ----
+        async function editUser() {
+            if (!currentUser) {
+                alert("請先在下拉選單選擇一位要編輯的使用者！");
+                return;
+            }
+            
+            const newName = prompt("請輸入新的使用者名稱：", currentUser.name);
+            if (!newName || !newName.trim() || newName.trim() === currentUser.name) {
+                return;
+            }
+            
+            try {
+                const res = await fetch(`/api/users/${currentUser.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newName.trim() })
+                });
+                const data = await res.json();
+                if (data.error) { alert(data.error); return; }
+                
+                // 重新載入選單並保持選中狀態
+                await loadUsers(currentUser.id);
+                if (isFavoritesMode) showFavorites();
+                
+            } catch (e) {
+                alert('編輯使用者失敗，請稍後再試');
+            }
+        }
+
+        // ---- 刪除使用者 ----
+        async function deleteUser() {
+            if (!currentUser) {
+                alert("請先在下拉選單選擇一位要刪除的使用者！");
+                return;
+            }
+            
+            const confirmMsg = `⚠️ 警告：確定要永久刪除使用者「${currentUser.name}」嗎？\n\n這項操作將會清空該帳號底下的【所有資料夾】與【所有收藏紀錄】，且無法復原！`;
+            if (!confirm(confirmMsg)) return;
+            
+            try {
+                const res = await fetch(`/api/users/${currentUser.id}`, {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+                if (data.error) { alert(data.error); return; }
+                
+                // 清空狀態並回到大廳
+                localStorage.removeItem('current_user_id');
+                currentUser = null;
+                isFavoritesMode = false; 
+                
+                await loadUsers(""); 
+                document.getElementById('sidePanel').style.display = 'none';
+                fetchJudgments(1);
+                
+                alert("使用者與其所有資料已成功刪除！");
+            } catch (e) {
+                alert('刪除使用者失敗，請稍後再試');
+            }
+        }
+
+        function onUserChange(sel) {
+            applyUser(usersList.find(x => String(x.id) === sel.value) || null);
+        }
+
+        async function addUser() {
+            const name = prompt("輸入新使用者名稱：");
+            if (!name || !name.trim()) return;
+            try {
+                const res = await fetch('/api/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name.trim() })
+                });
+                const data = await res.json();
+                if (data.error) { alert(data.error); return; }
+                await loadUsers(data.user.id);
+            } catch (e) {
+                alert('新增使用者失敗，請稍後再試');
+            }
+        }
+
+        // ---- 資料夾 ----
+        async function loadFolders() {
+            try {
+                const res = await fetch('/api/folders', { headers: apiHeaders() });
+                foldersList = (await res.json()).data || [];
+            } catch (e) { console.error(e); }
+        }
+
+        async function createNewFolder() {
+            const name = prompt("輸入新資料夾名稱：");
+            if (!name || !name.trim()) return;
+            try {
+                const res = await fetch('/api/folders', {
+                    method: 'POST',
+                    headers: apiHeaders(),
+                    body: JSON.stringify({ name: name.trim() })
+                });
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                await loadFolders();
+                updateFolderSelect(data.folder.id);
+            } catch (e) {
+                alert('建立資料夾失敗: ' + e.message);
+            }
+        }
+
+        function updateFolderSelect(selectedId = null) {
+            const sel = document.getElementById('favFolderSelect');
+            sel.innerHTML = '<option value="">（未分類）</option>' +
+                foldersList.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
+            if (selectedId) sel.value = selectedId;
+        }
+
+        // ---- 收藏 Modal 邏輯 ----
+        function openFavModal(id) {
+            if (!currentUser) { alert("請先在右上角選擇使用者"); return; }
+            
+            const item = judgmentsData.find(j => j.id === id);
+            if (!item) return;
+
+            const idParts = item.id.split(',');
+            const yr = item.year || idParts[1] || "";
+            const tp = item.case_type || idParts[2] || "";
+            const no = item.case_no || idParts[3] || "";
+            const title = `${getCourtName(item)} ${yr} 年度 ${tp} 字第 ${no} 號`;
+
+            document.getElementById('favJudgmentId').value = id;
+            document.getElementById('favTitleDisplay').value = title;
+            
+            updateFolderSelect();
+
+            const isEditing = isFav(id);
+            document.getElementById('favModalTitle').textContent = isEditing ? '編輯書籤' : '新增書籤';
+            document.getElementById('btnRemoveFav').style.display = isEditing ? 'block' : 'none';
+
+            if (isEditing) {
+                const favData = favMap[id];
+                document.getElementById('favFolderSelect').value = favData.folder_id || "";
+                document.getElementById('favNoteInput').value = favData.note || "";
+            } else {
+                document.getElementById('favFolderSelect').value = "";
+                document.getElementById('favNoteInput').value = "";
+            }
+
+            document.getElementById('favModal').style.display = 'flex';
+        }
+
+        function closeFavModal() {
+            document.getElementById('favModal').style.display = 'none';
+        }
+
+        async function saveFavFromModal() {
+            const id = document.getElementById('favJudgmentId').value;
+            const folderIdStr = document.getElementById('favFolderSelect').value;
+            const note = document.getElementById('favNoteInput').value.trim();
+            const folderId = folderIdStr ? parseInt(folderIdStr, 10) : null;
+
+            try {
+                const res = await fetch('/api/favorites', {
+                    method: 'POST',
+                    headers: apiHeaders(),
+                    body: JSON.stringify({ judgment_id: id, folder_id: folderId, note: note })
+                });
+                if (!res.ok) throw new Error('伺服器回應錯誤');
+                
+                const folderName = folderId ? foldersList.find(f => f.id === folderId)?.name : null;
+                favMap[id] = { note: note, folder_id: folderId, folder_name: folderName };
+                
+                closeFavModal();
+                refreshFavUI();
+            } catch (e) {
+                alert('儲存失敗，請稍後再試');
+            }
+        }
+
+        async function removeFavFromModal() {
+            const id = document.getElementById('favJudgmentId').value;
+            if (!confirm("確定要移除此收藏嗎？")) return;
+            
+            try {
+                const res = await fetch('/api/favorites?judgment_id=' + encodeURIComponent(id), { 
+                    method: 'DELETE', 
+                    headers: apiHeaders() 
+                });
+                if (!res.ok) throw new Error('伺服器回應錯誤');
+                
+                delete favMap[id];
+                closeFavModal();
+                refreshFavUI();
+            } catch (e) {
+                alert('移除失敗，請稍後再試');
+            }
+        }
+
+        function toggleFav(id) {
+            openFavModal(id);
+        }
+
+        function enterFavorites() {
+            if (!currentUser) { alert("請先在右上角選擇使用者"); return; }
+            isFavoritesMode = true;
+            document.getElementById('facetSidebar').style.display = 'none';
+            document.getElementById('sidePanel').style.display = 'none';
+            showFavorites();
+        }
+
+        async function showFavorites(filterFolderId = 'ALL') {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<p>⏳ 載入收藏中...</p>';
+            try {
+                const favRes = await fetch('/api/favorites', { headers: apiHeaders() });
+                const favListRaw = (await favRes.json()).data || [];
+                
+                favMap = {};
+                favListRaw.forEach(f => favMap[f.judgment_id] = { note: f.note, folder_id: f.folder_id, folder_name: f.folder_name });
+                updateFavCount();
+
+                let favList = favListRaw;
+                if (filterFolderId === 'NONE') {
+                    favList = favListRaw.filter(f => !f.folder_id);
+                } else if (filterFolderId !== 'ALL') {
+                    favList = favListRaw.filter(f => String(f.folder_id) === String(filterFolderId));
+                }
+
+                if (favList.length === 0) {
+                    judgmentsData = [];
+                    resultsDiv.innerHTML = `
+                        <div class="table-toolbar">
+                            <span>⭐ ${escapeHtml(currentUser.name)} 的最愛</span>
+                            ${renderFolderFilter(filterFolderId)}
+                            <button class="btn-toggle" onclick="exitFavorites()">← 回到搜尋結果</button>
+                        </div>
+                        <p style="padding:20px; color:#666;">此資料夾尚未收藏任何判決。</p>`;
+                    return;
+                }
+
+                const res = await fetch('/api/judgments/by_ids', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: favList.map(f => f.judgment_id) })
+                });
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                judgmentsData = data.data;
+
+                let html = `
+                    <div class="table-toolbar">
+                        <span>⭐ ${escapeHtml(currentUser.name)} 的最愛，共 <strong>${judgmentsData.length}</strong> 筆</span>
+                        ${renderFolderFilter(filterFolderId)}
+                        <button class="btn-toggle" onclick="exitFavorites()">← 回到搜尋結果</button>
+                    </div>
+                    <table class="result-table"><thead><tr>
+                        <th width="4%" style="text-align:center;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)" title="全選/取消全選"></th>
+                        <th width="6%" style="text-align:center;">收藏</th>
+                        <th width="50%">裁判字號 (資料夾/備註)</th>
+                        <th width="15%">日期</th>
+                        <th width="25%">案由</th></tr></thead><tbody>`;
+
+                judgmentsData.forEach(item => {
+                    const idParts = item.id.split(',');
+                    const yr = item.year || idParts[1] || "";
+                    const tp = item.case_type || idParts[2] || "";
+                    const no = item.case_no || idParts[3] || "";
+                    const title = `${getCourtName(item)} ${yr} 年度 ${tp} 字第 ${no} 號${getDocumentKind(item)}`;
+                    
+                    const favData = favMap[item.id] || {};
+                    const folderLabel = favData.folder_name ? `<span style="background:#e3f2fd; padding:2px 6px; border-radius:4px; font-size:0.85em; margin-right:5px;">📁 ${escapeHtml(favData.folder_name)}</span>` : '';
+                    const noteLabel = favData.note ? `<span style="color:#e65100; word-break: break-all; white-space: pre-wrap; display: inline-block;">📝 ${escapeHtml(favData.note)}</span>` : `<span style="color:#aaa;">（無備註）</span>`;
+                    html += `<tr>
+                        <td style="text-align:center;"><input type="checkbox" class="judgment-cb" value="${item.id}"></td>
+                        <td style="text-align:center;">
+                            <span style="cursor:pointer; font-size:1.3em;" onclick="openFavModal('${item.id}')" title="編輯收藏">⭐</span>
+                        </td>
+                        <td>
+                            <a class="result-title-link" onclick="showFullContent('${item.id}')">${title}</a>
+                            <div class="snippet">${folderLabel}${noteLabel}
+                                <a style="cursor:pointer; color:#1976d2; font-size:0.9em; margin-left:8px;" onclick="openFavModal('${item.id}')">[編輯]</a>
+                            </div>
+                        </td>
+                        <td>${formatROCDate(item.date)}</td>
+                        <td>${item.title || "無案由"}</td>
+                    </tr>`;
+                });
+                resultsDiv.innerHTML = html + '</tbody></table>';
+            } catch (e) {
+                resultsDiv.innerHTML = `<p style="color:red;">❌ 載入收藏失敗：${escapeHtml(e.message)}</p>`;
+            }
+        }
+        
+        function renderFolderFilter(currentVal) {
+            let opts = `<option value="ALL" ${currentVal==='ALL'?'selected':''}>全部收藏</option>
+                        <option value="NONE" ${currentVal==='NONE'?'selected':''}>（未分類）</option>`;
+            foldersList.forEach(f => {
+                opts += `<option value="${f.id}" ${String(currentVal)===String(f.id)?'selected':''}>📁 ${escapeHtml(f.name)}</option>`;
+            });
+            return `<select style="margin-left: 15px; padding: 5px;" onchange="showFavorites(this.value)">${opts}</select>`;
+        }
+
+        function exitFavorites() {
+            isFavoritesMode = false;
+            fetchJudgments(1);
+        }
 
         const courtMapping = {
             "TPS": "最高法院", "TPA": "最高行政法院", "TPC": "懲戒法院", "CPC": "司法院憲法法庭",
@@ -290,7 +733,7 @@
         function parseKeywords(inputStr) {
             if (!inputStr) return [];
             const cleanStr = inputStr.replace(/[+\-&()]/g, ' ');
-            return cleanStr.trim().split(/[\s ]+/).filter(k => k.length > 0);
+            return cleanStr.trim().split(/[\s\u3000]+/).filter(k => k.length > 0);
         }
 
         function generateHighlightedSnippet(text, keywords, maxLength = 110) {
@@ -329,6 +772,7 @@
         }
 
         function resetSearch() {
+            isFavoritesMode = false;
             clearSearchError();
             currentSearchKeywords = [];
             document.getElementById('courtInput').value = "";
@@ -352,6 +796,12 @@
             document.getElementById('advSizeMax').value = "";
 
             currentSearchPayload = {};
+            
+            const sortSelect = document.getElementById('tableSortSelect');
+            if (sortSelect) sortSelect.value = "date_desc";
+            const selectAllCb = document.getElementById('selectAll');
+            if (selectAllCb) selectAllCb.checked = false;
+
             fetchJudgments(1);
             document.getElementById('sidePanel').style.display = "none";
         }
@@ -380,6 +830,7 @@
         }
 
         function renderFacets(facets) {
+            if (isFavoritesMode) return;
             const sidebar = document.getElementById('facetSidebar');
             sidebar.style.opacity = '1';
 
@@ -509,8 +960,10 @@
         // 初次進入網頁執行載入
         currentSearchPayload = {};
         fetchJudgments(1);
+        loadUsers();
 
         async function searchJudgments() {
+            isFavoritesMode = false;
             clearSearchError();
 
             const court = document.getElementById('courtInput').value;
@@ -631,7 +1084,7 @@
 
                 const rocDate = formatROCDate(item.date);
                 
-                // 調整：如果使用者未搜尋關鍵字，預設優先顯示【主文】
+                // 如果使用者未搜尋關鍵字，預設優先顯示【主文】
                 let displaySnippet = "";
                 const hasKeywords = currentSearchKeywords.length > 0;
 
@@ -646,7 +1099,6 @@
                         displaySnippet = "<span style='color: #999;'>(此案件無內容)</span>";
                     }
                 } else {
-                    // 有搜尋關鍵字時，保留高亮邏輯
                     if (item.main_text && item.main_text.trim() !== "" && currentSearchKeywords.some(kw => item.main_text.includes(kw))) {
                         const highlightedMain = generateHighlightedSnippet(item.main_text, currentSearchKeywords, 110);
                         displaySnippet = `<span class="main-text-tag">【主文】</span> ${highlightedMain}`; 
@@ -661,7 +1113,9 @@
                 bodyHtml += `
                     <tr>
                         <td style="text-align:center;"><input type="checkbox" class="judgment-cb" value="${item.id}"></td>
-                        <td>${absoluteIndex}.</td>
+                        <td>${absoluteIndex}.<br>
+                            <span class="fav-star" data-id="${item.id}" style="cursor:pointer; font-size:1.2em;" onclick="toggleFav('${item.id}')" title="加入/移除我的最愛">${isFav(item.id) ? '⭐' : '☆'}</span>
+                        </td>
                         <td>
                             <a class="result-title-link" onclick="showFullContent('${item.id}')">${titleWithSize}</a>
                             <span class="snippet">${displaySnippet}</span>
@@ -712,6 +1166,7 @@
         }
 
         function displayResults() {
+            if (isFavoritesMode) return;
             const resultsDiv = document.getElementById('results');
             
             if (judgmentsData.length === 0) {
@@ -729,9 +1184,8 @@
                 return;
             }
 
-            const currentSortVal = document.getElementById('tableSortSelect')?.value || "date_desc";
+            const currentSortVal = currentSearchPayload.sort_type || "date_desc";
             const limitWarning = (typeof totalItems === 'number' && totalItems > 1000) ? '<span style="color:#e65100; font-size:0.9em; margin-left: 8px;">(系統僅開放瀏覽前 1000 筆)</span>' : '';
-
             let html = `
                 <div class="table-toolbar">
                     <span>共 <strong>${totalItems}</strong> 筆符合條件 ${limitWarning}</span>
@@ -765,7 +1219,7 @@
             renderTableBody(judgmentsData);
         }
 
-        function showFullContent(id) {
+        async function showFullContent(id) {
             const item = judgmentsData.find(j => j.id === id);
             if (!item) return;
 
@@ -780,10 +1234,30 @@
             const contentText = item.content || "";
             const sizeKB = ((contentText.length * 2) / 1024).toFixed(1);
 
-            document.getElementById('sideTitle').innerHTML = `${fullTitle} <span style="color: #777; font-size: 0.75em; font-weight: normal;">(${sizeKB} KB)</span>`;
+            currentSideId = id;
+            document.getElementById('sideTitle').innerHTML = `${fullTitle} <span style="color: #777; font-size: 0.75em; font-weight: normal;">(${sizeKB} KB)</span>
+                <span id="sideFavStar" style="cursor:pointer; font-size:0.9em;" onclick="openFavModal('${item.id}')" title="加入/移除我的最愛">${isFav(item.id) ? '⭐' : '☆'}</span>`;
             document.getElementById('sideMeta').innerHTML = `<strong>日期：</strong>${formatROCDate(item.date)} &nbsp;|&nbsp; <strong>案由：</strong>${item.title || "無"} &nbsp;|&nbsp; <strong>大小：</strong>${sizeKB} KB`;
+            
+            // 先預設把純文字塞進去
             document.getElementById('sideBody').textContent = item.content;
             document.getElementById('sidePanel').style.display = "block";
+
+            // === 👇 新增：載入使用者專屬的重點紀錄 👇 ===
+            currentHighlights = [];
+            if (currentUser) {
+                try {
+                    const hlRes = await fetch(`/api/highlights/${encodeURIComponent(id)}`, { headers: apiHeaders() });
+                    const hlData = await hlRes.json();
+                    if (hlData && hlData.data) {
+                        currentHighlights = hlData.data;
+                        renderHighlights(); // 若有重點，重新把文字加上黃底 HTML
+                    }
+                } catch(e) {
+                    console.error("載入重點失敗", e);
+                }
+            }
+            // ============================================
 
             const historyBox = document.getElementById('sideHistory');
             const loadingBox = document.getElementById('historyLoading');
@@ -960,6 +1434,101 @@
             };
             return text.replace(/[&<>"']/g, m => map[m]);
         }   
+        // ==========================================
+        // 畫重點功能 (H 快捷鍵)
+        // ==========================================
+        let currentHighlights = [];
+
+        // 監聽鍵盤事件：按下 H 或 h 時，將選取的文字畫重點
+        document.addEventListener('keydown', async function(e) {
+            if (e.key === 'h' || e.key === 'H') {
+                // 如果目前沒開著判決書，或是沒有登入使用者，就不動作
+                if (!currentSideId || !currentUser) return;
+                
+                // 確認目前游標焦點不在輸入框內 (避免打字時誤觸)
+                const activeTag = document.activeElement.tagName.toLowerCase();
+                if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
+
+                const selection = window.getSelection();
+                if (!selection.rangeCount || selection.isCollapsed) return;
+
+                const range = selection.getRangeAt(0);
+                const sideBody = document.getElementById('sideBody');
+
+                // 確認選取的範圍確實是在 sideBody 裡面
+                if (!sideBody.contains(range.commonAncestorContainer)) return;
+
+                // 將選取的純文字存起來 (最簡單的實作方式：存關鍵字，然後重新取代)
+                const selectedText = selection.toString().trim();
+                if (selectedText.length === 0) return;
+
+                // 將這段文字加入目前的重點清單 (避免重複)
+                if (!currentHighlights.includes(selectedText)) {
+                    currentHighlights.push(selectedText);
+                }
+
+                // 取消原本系統的反白選取狀態
+                selection.removeAllRanges();
+
+                // 重新渲染畫面並儲存到後端
+                renderHighlights();
+                await saveHighlightsToBackend();
+            }
+        });
+
+        // 根據 currentHighlights 陣列，重新把 sideBody 裡面的字加上黃色標籤
+        function renderHighlights() {
+            if (!currentSideId) return;
+            const item = judgmentsData.find(j => j.id === currentSideId);
+            if (!item) return;
+
+            let contentHTML = escapeHtml(item.content || "");
+            
+            // 依長度排序，優先取代長的字串，避免短字串破壞長字串的 HTML 標籤
+            const sortedHighlights = [...currentHighlights].sort((a, b) => b.length - a.length);
+
+            sortedHighlights.forEach((hlText, index) => {
+                // 使用唯一佔位符替換，避免互相干擾
+                const safeHl = escapeRegExp(escapeHtml(hlText));
+                const regex = new RegExp(`(${safeHl})`, 'gi');
+                contentHTML = contentHTML.replace(regex, `<mark class="highlight-mark" onclick="removeHighlight(${index})">$1</mark>`);
+            });
+
+            document.getElementById('sideBody').innerHTML = contentHTML;
+        }
+
+        // 點擊已經畫好的重點，可以將其移除
+        async function removeHighlight(index) {
+            if (!confirm("確定要取消這段重點嗎？")) return;
+            currentHighlights.splice(index, 1);
+            renderHighlights();
+            await saveHighlightsToBackend();
+        }
+
+        // 清除整篇判決的所有重點
+        async function clearAllHighlights() {
+            if (!currentSideId || !currentUser) return;
+            if (currentHighlights.length === 0) return;
+            if (!confirm("確定要清除這篇判決的所有重點嗎？")) return;
+            
+            currentHighlights = [];
+            renderHighlights();
+            await saveHighlightsToBackend();
+        }
+
+        // 將目前的重點清單送回後端資料庫保存
+        async function saveHighlightsToBackend() {
+            if (!currentSideId || !currentUser) return;
+            try {
+                await fetch(`/api/highlights/${encodeURIComponent(currentSideId)}`, {
+                    method: 'POST',
+                    headers: apiHeaders(),
+                    body: JSON.stringify({ highlights: currentHighlights })
+                });
+            } catch (e) {
+                console.error("重點儲存失敗", e);
+            }
+        }
     </script>
 </body>
 </html>
