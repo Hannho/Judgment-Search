@@ -70,8 +70,8 @@ def get_db_connection():
 def read_index():
     if os.path.exists("index_final.html"):
         return FileResponse("index_final.html")
-    elif os.path.exists("index_final_3.html"):
-        return FileResponse("index_final_3.html")
+    elif os.path.exists("index_final_4.html"):
+        return FileResponse("index_final_4.html")
     return {"message": "HTML template not found"}
 
 @app.get("/style.css")
@@ -88,6 +88,7 @@ class JudgmentSearchQuery(BaseModel):
     year: Optional[str] = ""
     title_kw: Optional[str] = ""
     content_kw: Optional[str] = ""
+    main_text_kw: Optional[str] = ""
     page: int = 1
     sort_type: str = "date_desc"
     case_categories: List[str] = []
@@ -131,6 +132,11 @@ def build_search_conditions(query: JudgmentSearchQuery):
     if query.title_kw:
         for kw in query.title_kw.split():
             where_clauses.append("title LIKE %s")
+            params.append(f"%{kw}%")
+
+    if query.main_text_kw:
+        for kw in query.main_text_kw.split():
+            where_clauses.append("main_text LIKE %s")
             params.append(f"%{kw}%")
             
     if query.content_kw:
@@ -191,7 +197,7 @@ def build_search_conditions(query: JudgmentSearchQuery):
     return where_sql, params
 
 # ==========================================
-# API 1：高速讀取前 10 筆資料 (前端秒出)
+# API 1：高速讀取前 10 筆資料 (包含 main_text)
 # ==========================================
 @app.post("/api/judgments/list")
 def get_judgments_list(query: JudgmentSearchQuery):
@@ -210,7 +216,8 @@ def get_judgments_list(query: JudgmentSearchQuery):
             
             limit = 10
             offset = (query.page - 1) * limit
-            data_sql = f"SELECT id, year, case_type, case_no, date, title, content, pdf_url FROM judgments {where_sql} {order_clause} LIMIT %s OFFSET %s"
+            # 撈取 main_text 欄位供前端無搜尋條件時直接顯示主文
+            data_sql = f"SELECT id, year, case_type, case_no, date, title, content, pdf_url, main_text FROM judgments {where_sql} {order_clause} LIMIT %s OFFSET %s"
             
             cursor.execute(data_sql, tuple(params + [limit, offset]))
             results = [dict(row) for row in cursor.fetchall()]

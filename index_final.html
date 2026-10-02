@@ -177,13 +177,18 @@
             "KSD": "臺灣高雄地方法院", "PTD": "臺灣屏東地方法院", "TTD": "臺灣臺東地方法院",
             "HLD": "臺灣花蓮地方法院", "ILD": "臺灣宜蘭地方法院", "KLD": "臺灣基隆地方法院",
             "PHD": "臺灣澎湖地方法院", "KMD": "福建金門地方法院", "LCD": "福建連江地方法院",
+            "CTD": "臺灣橋頭地方法院", "ULD": "臺灣雲林地方法院", 
             "CLE": "臺灣桃園地方法院中壢簡易庭", "TYE": "臺灣桃園地方法院桃園簡易庭",
             "PCE": "臺灣新北地方法院板橋簡易庭", "STE": "臺灣新北地方法院三重簡易庭",
             "TPE": "臺灣臺北地方法院臺北簡易庭", "SLE": "臺灣士林地方法院士林簡易庭",
-            "NIE": "臺灣士林地方法院內湖簡易庭", "ILE": "臺灣宜蘭地方法院宜蘭簡易庭",
+            "NIE": "臺灣士林地方法院內湖簡易庭", "NHE": "臺灣臺北地方法院內湖簡易庭",
+            "SDE": "臺灣臺北地方法院新店簡易庭", "ILE": "臺灣宜蘭地方法院宜蘭簡易庭",
             "LTE": "臺灣宜蘭地方法院羅東簡易庭", "KSE": "臺灣高雄地方法院高雄簡易庭",
-            "FSE": "臺灣高雄地方法院鳳山簡易庭", "KSY": "臺灣高雄少年及家事法院", 
-            "IPC": "智慧財產及商業法院"
+            "FSE": "臺灣高雄地方法院鳳山簡易庭", "CPE": "臺灣屏東地方法院潮州簡易庭",
+            "FYE": "臺灣臺中地方法院豐原簡易庭", "TCE": "臺灣臺中地方法院臺中簡易庭",
+            "PKE": "臺灣彰化地方法院北斗簡易庭", "HUE": "臺灣雲林地方法院虎尾簡易庭",
+            "MKE": "臺灣澎湖地方法院馬公簡易庭", "KME": "福建金門地方法院金城簡易庭",
+            "KSY": "臺灣高雄少年及家事法院", "IPC": "智慧財產及商業法院"
         };
 
         const courtSelect = document.getElementById('courtInput');
@@ -549,6 +554,7 @@
                 year: advYear,
                 title_kw: advTitle,
                 content_kw: advContent,
+                main_text_kw: advMainText,
                 case_categories: checkedCategories,
                 doc_type: selectedDocType,
                 adv_case_type: advCaseType,
@@ -596,15 +602,31 @@
 
                 const rocDate = formatROCDate(item.date);
                 
+                // 調整：如果使用者未搜尋關鍵字，預設優先顯示【主文】
                 let displaySnippet = "";
-                if (item.main_text && item.main_text.trim() !== "") {
-                    const highlightedMain = generateHighlightedSnippet(item.main_text, currentSearchKeywords, 110);
-                    displaySnippet = `<span class="main-text-tag">【主文】</span> ${highlightedMain}`; 
-                } else if (item.content && item.content.trim() !== "") {
-                    const highlightedContent = generateHighlightedSnippet(item.content, currentSearchKeywords, 110);
-                    displaySnippet = `<span class="summary-tag">【摘要】</span> ${highlightedContent}`;
+                const hasKeywords = currentSearchKeywords.length > 0;
+
+                if (!hasKeywords) {
+                    if (item.main_text && item.main_text.trim() !== "") {
+                        const cleanMainText = item.main_text.length > 130 ? item.main_text.substring(0, 130) + "..." : item.main_text;
+                        displaySnippet = `<span class="main-text-tag">【主文】</span> ${cleanMainText}`;
+                    } else if (item.content && item.content.trim() !== "") {
+                        const cleanContent = item.content.length > 110 ? item.content.substring(0, 110) + "..." : item.content;
+                        displaySnippet = `<span class="summary-tag">【摘要】</span> ${cleanContent}`;
+                    } else {
+                        displaySnippet = "<span style='color: #999;'>(此案件無內容)</span>";
+                    }
                 } else {
-                    displaySnippet = "<span style='color: #999;'>(此案件無內容)</span>";
+                    // 有搜尋關鍵字時，保留高亮邏輯
+                    if (item.main_text && item.main_text.trim() !== "" && currentSearchKeywords.some(kw => item.main_text.includes(kw))) {
+                        const highlightedMain = generateHighlightedSnippet(item.main_text, currentSearchKeywords, 110);
+                        displaySnippet = `<span class="main-text-tag">【主文】</span> ${highlightedMain}`; 
+                    } else if (item.content && item.content.trim() !== "") {
+                        const highlightedContent = generateHighlightedSnippet(item.content, currentSearchKeywords, 110);
+                        displaySnippet = `<span class="summary-tag">【摘要】</span> ${highlightedContent}`;
+                    } else {
+                        displaySnippet = "<span style='color: #999;'>(此案件無內容)</span>";
+                    }
                 }
 
                 bodyHtml += `
