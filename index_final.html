@@ -5,41 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>裁判書搜尋與歷審查詢系統</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-        .pagination-controls {
-            text-align: center; margin-top: 15px; padding: 12px;
-            background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;
-        }
-        .pagination-controls button {
-            padding: 8px 16px; margin: 0 10px; border: 1px solid #ccc;
-            background: #fff; border-radius: 4px; cursor: pointer;
-            font-size: 0.95em; transition: background 0.2s;
-        }
-        .pagination-controls button:hover:not(:disabled) { background: #e2e6ea; }
-        .pagination-controls button:disabled { cursor: not-allowed; opacity: 0.5; background: #f1f3f5; }
-
-        /* 統計側邊欄風格 */
-        .facet-sidebar {
-            width: 260px; flex-shrink: 0; background: #e8f5e9; 
-            border: 1px solid #a5d6a7; border-radius: 8px; padding: 10px; margin-right: 15px;
-            max-height: 85vh; overflow-y: auto;
-        }
-        .facet-group { margin-bottom: 12px; background: #fff; border-radius: 6px; border: 1px solid #c8e6c9; }
-        .facet-header { 
-            background: #f1f8e9; padding: 10px; font-weight: bold; font-size: 1.05em;
-            cursor: pointer; display: flex; align-items: center; 
-        }
-        .facet-header::before { content: '➖'; margin-right: 8px; font-size: 0.8em; }
-        .facet-header.collapsed::before { content: '➕'; }
-        .facet-list { list-style: none; padding: 0; margin: 0; }
-        .facet-list li { 
-            padding: 8px 10px; border-top: 1px solid #eee; display: flex; 
-            justify-content: space-between; align-items: center; cursor: pointer; 
-            font-size: 0.95em; color: #2e7d32; transition: background 0.2s;
-        }
-        .facet-list li:hover { background: #f9fbe7; font-weight: bold; }
-        .facet-badge { background: #2e7d32; color: white; border-radius: 12px; padding: 2px 8px; font-size: 0.85em; font-weight: bold;}
-    </style>
 </head>
 <body>
 
@@ -155,7 +120,7 @@
                 <!-- 彈出/下方：判決書詳情與歷審紀錄 -->
                 <div id="sidePanel" class="detail-panel">
                     <button class="close-panel-btn" onclick="closeSidePanel()" title="關閉全文">✖</button>
-                    <h3 id="sideTitle" style="color: #0000cc; margin-top: 0;"></h3>
+                    <h3 id="sideTitle" style="color: #0000cc; margin-top: 0; padding-right: 35px;"></h3>
                     <div id="sideMeta" style="color: #666; font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 10px;"></div>
                     
                     <div id="historyLoading" class="history-loading">
@@ -212,13 +177,39 @@
             "KSD": "臺灣高雄地方法院", "PTD": "臺灣屏東地方法院", "TTD": "臺灣臺東地方法院",
             "HLD": "臺灣花蓮地方法院", "ILD": "臺灣宜蘭地方法院", "KLD": "臺灣基隆地方法院",
             "PHD": "臺灣澎湖地方法院", "KMD": "福建金門地方法院", "LCD": "福建連江地方法院",
-            "CLE": "臺灣桃園地方法院中壢簡易庭", "TYE": "臺灣桃園地方法院桃園簡易庭",
+            "CTD": "臺灣橋頭地方法院", "ULD": "臺灣雲林地方法院", 
+            
+            // --- 北部簡易庭 ---
+            "TPE": "臺灣臺北地方法院臺北簡易庭", "SDE": "臺灣臺北地方法院新店簡易庭",
+            "SLE": "臺灣士林地方法院士林簡易庭", "NIE": "臺灣士林地方法院內湖簡易庭", "NHE": "臺灣臺北地方法院內湖簡易庭",
             "PCE": "臺灣新北地方法院板橋簡易庭", "STE": "臺灣新北地方法院三重簡易庭",
-            "TPE": "臺灣臺北地方法院臺北簡易庭", "SLE": "臺灣士林地方法院士林簡易庭",
-            "NIE": "臺灣士林地方法院內湖簡易庭", "ILE": "臺灣宜蘭地方法院宜蘭簡易庭",
-            "LTE": "臺灣宜蘭地方法院羅東簡易庭", "KSE": "臺灣高雄地方法院高雄簡易庭",
-            "FSE": "臺灣高雄地方法院鳳山簡易庭", "KSY": "臺灣高雄少年及家事法院", 
-            "IPC": "智慧財產及商業法院"
+            "KLE": "臺灣基隆地方法院基隆簡易庭", 
+            "TYE": "臺灣桃園地方法院桃園簡易庭", "CLE": "臺灣桃園地方法院中壢簡易庭",
+            "SJE": "臺灣新竹地方法院新竹簡易庭", "CDE": "臺灣新竹地方法院竹東簡易庭",
+            
+            // --- 中部簡易庭 ---
+            "MLE": "臺灣苗栗地方法院苗栗簡易庭",
+            "TCE": "臺灣臺中地方法院臺中簡易庭", "FYE": "臺灣臺中地方法院豐原簡易庭", "CSE": "臺灣臺中地方法院清水簡易庭", 
+            "CHE": "臺灣彰化地方法院彰化簡易庭", "YLE": "臺灣彰化地方法院員林簡易庭", "PDE": "臺灣彰化地方法院北斗簡易庭", "OLE": "臺灣彰化地方法院員林簡易庭",
+            "NTE": "臺灣南投地方法院南投簡易庭", "PLE": "臺灣南投地方法院埔里簡易庭",
+            "ULE": "臺灣雲林地方法院雲林簡易庭", "TLE": "臺灣雲林地方法院斗六簡易庭", "HUE": "臺灣雲林地方法院虎尾簡易庭", "PKE": "臺灣雲林地方法院北港簡易庭",
+            "CYE": "臺灣嘉義地方法院嘉義簡易庭", "PZE": "臺灣嘉義地方法院朴子簡易庭",
+            
+            // --- 南部簡易庭 ---
+            "TNE": "臺灣臺南地方法院臺南簡易庭", "SYE": "臺灣臺南地方法院新營簡易庭", "SSE": "臺灣臺南地方法院新市簡易庭", "LYE": "臺灣臺南地方法院柳營簡易庭",
+            "KSE": "臺灣高雄地方法院高雄簡易庭", "FSE": "臺灣高雄地方法院鳳山簡易庭", "GSE": "臺灣橋頭地方法院岡山簡易庭", "CCE": "臺灣橋頭地方法院橋頭簡易庭", "CTE": "臺灣橋頭地方法院橋頭簡易庭",
+            "PTE": "臺灣屏東地方法院屏東簡易庭", "CPE": "臺灣屏東地方法院潮州簡易庭",
+            
+            // --- 東部與外島簡易庭 ---
+            "ILE": "臺灣宜蘭地方法院宜蘭簡易庭", "LTE": "臺灣宜蘭地方法院羅東簡易庭",
+            "HLE": "臺灣花蓮地方法院花蓮簡易庭", 
+            "TTE": "臺灣臺東地方法院臺東簡易庭",
+            "MKE": "臺灣澎湖地方法院馬公簡易庭", 
+            "KME": "福建金門地方法院金城簡易庭", 
+            "LCE": "福建連江地方法院連江簡易庭",
+            
+            // --- 其他專業法院 ---
+            "KSY": "臺灣高雄少年及家事法院", "IPC": "智慧財產及商業法院"
         };
 
         const courtSelect = document.getElementById('courtInput');
@@ -334,7 +325,7 @@
         }
 
         function handleSortChange() {
-            fetchJudgments(1);
+            fetchJudgments(1,false);
         }
 
         function resetSearch() {
@@ -388,10 +379,11 @@
             return parseInt(`${fullYear}${fullMonth}${fullDay}`, 10);
         }
 
-        // 側邊欄渲染邏輯 (Facets)
         function renderFacets(facets) {
             const sidebar = document.getElementById('facetSidebar');
-            if (totalItems === 0) {
+            sidebar.style.opacity = '1';
+
+            if (totalItems === 0 || !facets || Object.keys(facets.courts || {}).length === 0) {
                 sidebar.style.display = 'none';
                 return;
             }
@@ -400,14 +392,27 @@
             let html = `<h3 style="color: #4a148c; margin-top: 5px; font-size: 1.1em;">» 查詢結果 <span class="facet-badge" style="float:right; font-size: 0.9em;">${totalItems} 筆</span></h3>`;
 
             html += generateFacetGroup('依裁判法院區分', facets.courts, (code) => courtMapping[code] || code, 'court');
-            html += generateFacetGroup('依裁判案號年度區分', facets.years, (year) => `${year} 年度`, 'year');
+            html += generateFacetGroup('依裁判案號年度區分', facets.years, (year) => year, 'year');
             html += generateFacetGroup('依案件類別區分', facets.categories, (cat) => cat, 'category');
 
             sidebar.innerHTML = html;
         }
 
         function generateFacetGroup(title, dataObj, formatKeyFn, type) {
-            const keys = Object.keys(dataObj).sort((a, b) => dataObj[b] - dataObj[a]); 
+            if (!dataObj) return '';
+            let keys = Object.keys(dataObj);
+            
+            if (type === 'year') {
+                const yearOrder = ['今年', '去年', '前年', '其他'];
+                keys.sort((a, b) => {
+                    let indexA = yearOrder.findIndex(y => a.includes(y));
+                    let indexB = yearOrder.findIndex(y => b.includes(y));
+                    return indexA - indexB;
+                });
+            } else {
+                keys.sort((a, b) => dataObj[b] - dataObj[a]); 
+            }
+
             if (keys.length === 0) return '';
 
             let listHtml = keys.map(k => `
@@ -419,10 +424,10 @@
 
             return `
                 <div class="facet-group">
-                    <div class="facet-header" onclick="this.classList.toggle('collapsed'); this.nextElementSibling.style.display = this.classList.contains('collapsed') ? 'none' : 'block';">
+                    <div class="facet-header collapsed" onclick="this.classList.toggle('collapsed'); this.nextElementSibling.style.display = this.classList.contains('collapsed') ? 'none' : 'block';">
                         ${title}
                     </div>
-                    <ul class="facet-list">${listHtml}</ul>
+                    <ul class="facet-list" style="display: none;">${listHtml}</ul>
                 </div>
             `;
         }
@@ -431,46 +436,67 @@
             if (type === 'court') {
                 document.getElementById('courtInput').value = value;
             } else if (type === 'year') {
-                document.getElementById('advYear').value = value;
-                if (document.getElementById('advancedPanel').style.display === 'none') {
-                    toggleAdvancedSearch(); 
+                let actualYear = value;
+                if (value.includes('(')) {
+                    actualYear = value.split('(')[1].replace(')', '');
                 }
+                document.getElementById('advYear').value = actualYear;
             } else if (type === 'category') {
                 const checkboxes = document.querySelectorAll('input[name="caseCategory"]');
                 checkboxes.forEach(cb => { cb.checked = (cb.value === value); });
-                if (document.getElementById('advancedPanel').style.display === 'none') {
-                    toggleAdvancedSearch();
-                }
             }
             searchJudgments();
         }
 
-        // 核心後端分頁抓取邏輯
-        async function fetchJudgments(page = 1) {
-            currentSearchPayload.page = page;
-            currentSearchPayload.sort_type = document.getElementById('tableSortSelect')?.value || "date_desc";
+        // 非同步分批抓取核心邏輯
+        async function fetchJudgments(page = 1, refreshStats = true) {
+                currentSearchPayload.page = page;
+                currentSearchPayload.sort_type = document.getElementById('tableSortSelect')?.value || "date_desc";
 
-            try {
-                document.getElementById('results').innerHTML = '<p>⏳ 正在從資料庫搜尋中，請稍候...</p>';
-                
-                const response = await fetch('/api/judgments', {
+                try {
+                    document.getElementById('results').innerHTML = '<p>⏳ 正在從資料庫撈取前 10 筆資料，請稍候...</p>';
+                    const sidebar = document.getElementById('facetSidebar');
+                    if (refreshStats) {
+                        sidebar.style.display = 'block';
+                        if (sidebar.innerHTML.trim() === '') {
+                            sidebar.innerHTML = '<p style="padding: 15px; color: #666; font-weight: bold;">⏳ 全庫資料統計中...</p>';
+                        } else {
+                            sidebar.style.opacity = '0.5';   // 保留舊的統計，先變淡
+                        }
+                    }
+                // 第一階段：高速獲取當頁 10 筆
+                const listResponse = await fetch('/api/judgments/list', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(currentSearchPayload)
                 });
 
-                if (!response.ok) throw new Error("伺服器回應錯誤");
+                if (!listResponse.ok) throw new Error("伺服器回應錯誤");
                 
-                const data = await response.json();
-                if (data.error) throw new Error(data.error);
+                const listData = await listResponse.json();
+                if (listData.error) throw new Error(listData.error);
                 
-                judgmentsData = data.data.filter(item => item && item.id && item.id.trim() !== "");
-                totalItems = data.total;
+                judgmentsData = listData.data.filter(item => item && item.id && item.id.trim() !== "");
                 currentPage = page;
+                totalItems = "計算中..."; 
                 
                 displayResults();
                 
-                if (data.facets) renderFacets(data.facets);
+                // 第二階段：背景撈取統計與總筆數
+                if (refreshStats) {
+                    const statsResponse = await fetch('/api/judgments/stats', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(currentSearchPayload)
+                    });
+
+                    const statsData = await statsResponse.json();
+                    totalItems = statsData.total;
+
+                    displayResults();
+
+                    if (statsData.facets) renderFacets(statsData.facets);
+                }
                 
             } catch(e) {
                 console.error(e);
@@ -480,7 +506,7 @@
             }
         }
 
-        // 初次載入
+        // 初次進入網頁執行載入
         currentSearchPayload = {};
         fetchJudgments(1);
 
@@ -557,6 +583,7 @@
                 year: advYear,
                 title_kw: advTitle,
                 content_kw: advContent,
+                main_text_kw: advMainText,
                 case_categories: checkedCategories,
                 doc_type: selectedDocType,
                 adv_case_type: advCaseType,
@@ -570,7 +597,6 @@
             document.getElementById('sidePanel').style.display = "none"; 
         }
 
-        // 全選/取消全選
         function toggleSelectAll(source) {
             const checkboxes = document.querySelectorAll('.judgment-cb');
             checkboxes.forEach(cb => {
@@ -582,7 +608,9 @@
             const tbody = document.getElementById('resultTableBody');
             if (!tbody) return;
 
-            const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+            const totalNumeric = typeof totalItems === 'number' ? totalItems : 1000;
+            const displayTotal = Math.min(totalNumeric, 1000);
+            const totalPages = Math.ceil(displayTotal / itemsPerPage) || 1;
             const startIndex = (currentPage - 1) * itemsPerPage;
 
             let bodyHtml = "";
@@ -603,15 +631,31 @@
 
                 const rocDate = formatROCDate(item.date);
                 
+                // 調整：如果使用者未搜尋關鍵字，預設優先顯示【主文】
                 let displaySnippet = "";
-                if (item.main_text && item.main_text.trim() !== "") {
-                    const highlightedMain = generateHighlightedSnippet(item.main_text, currentSearchKeywords, 110);
-                    displaySnippet = `<span class="main-text-tag">【主文】</span> ${highlightedMain}`; 
-                } else if (item.content && item.content.trim() !== "") {
-                    const highlightedContent = generateHighlightedSnippet(item.content, currentSearchKeywords, 110);
-                    displaySnippet = `<span class="summary-tag">【摘要】</span> ${highlightedContent}`;
+                const hasKeywords = currentSearchKeywords.length > 0;
+
+                if (!hasKeywords) {
+                    if (item.main_text && item.main_text.trim() !== "") {
+                        const cleanMainText = item.main_text.length > 130 ? item.main_text.substring(0, 130) + "..." : item.main_text;
+                        displaySnippet = `<span class="main-text-tag">【主文】</span> ${cleanMainText}`;
+                    } else if (item.content && item.content.trim() !== "") {
+                        const cleanContent = item.content.length > 110 ? item.content.substring(0, 110) + "..." : item.content;
+                        displaySnippet = `<span class="summary-tag">【摘要】</span> ${cleanContent}`;
+                    } else {
+                        displaySnippet = "<span style='color: #999;'>(此案件無內容)</span>";
+                    }
                 } else {
-                    displaySnippet = "<span style='color: #999;'>(此案件無內容)</span>";
+                    // 有搜尋關鍵字時，保留高亮邏輯
+                    if (item.main_text && item.main_text.trim() !== "" && currentSearchKeywords.some(kw => item.main_text.includes(kw))) {
+                        const highlightedMain = generateHighlightedSnippet(item.main_text, currentSearchKeywords, 110);
+                        displaySnippet = `<span class="main-text-tag">【主文】</span> ${highlightedMain}`; 
+                    } else if (item.content && item.content.trim() !== "") {
+                        const highlightedContent = generateHighlightedSnippet(item.content, currentSearchKeywords, 110);
+                        displaySnippet = `<span class="summary-tag">【摘要】</span> ${highlightedContent}`;
+                    } else {
+                        displaySnippet = "<span style='color: #999;'>(此案件無內容)</span>";
+                    }
                 }
 
                 bodyHtml += `
@@ -652,13 +696,16 @@
         }
 
         function changePage(delta) {
-            const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+            const totalNumeric = typeof totalItems === 'number' ? totalItems : 1000;
+            const displayTotal = Math.min(totalNumeric, 1000);
+            const totalPages = Math.ceil(displayTotal / itemsPerPage) || 1;
             let newPage = currentPage + delta;
+            
             if (newPage < 1) newPage = 1;
             if (newPage > totalPages) newPage = totalPages;
             
             if (newPage !== currentPage) {
-                fetchJudgments(newPage).then(() => {
+                fetchJudgments(newPage,false).then(() => {
                     document.querySelector('.search-box').scrollIntoView({ behavior: 'smooth', block: 'start' });
                 });
             }
@@ -683,10 +730,11 @@
             }
 
             const currentSortVal = document.getElementById('tableSortSelect')?.value || "date_desc";
+            const limitWarning = (typeof totalItems === 'number' && totalItems > 1000) ? '<span style="color:#e65100; font-size:0.9em; margin-left: 8px;">(系統僅開放瀏覽前 1000 筆)</span>' : '';
 
             let html = `
                 <div class="table-toolbar">
-                    <span>共 <strong>${totalItems}</strong> 筆符合條件</span>
+                    <span>共 <strong>${totalItems}</strong> 筆符合條件 ${limitWarning}</span>
                     <div>
                         <label for="tableSortSelect">排序方式：</label>
                         <select id="tableSortSelect" class="sort-select" onchange="handleSortChange()">
@@ -766,12 +814,12 @@
                 historyBox.innerHTML = "<span style='color:red;'>歷審爬蟲暫時無法取得資料，請確認司法院網站連線狀態。</span>";
                 historyBox.style.display = "block";
             });
-            
         }
+
         function closeSidePanel() {
             document.getElementById('sidePanel').style.display = 'none';
         }
-        // 🤖 聊天機器人
+
         function handleChatKeyDown(event) {
             if (event.key === 'Enter') {
                 event.preventDefault();
@@ -829,14 +877,12 @@
 
             if (!question) return;
 
-            // 🛑 讀取所有被勾選的判決書
             const checkedBoxes = document.querySelectorAll('.judgment-cb:checked');
             if (checkedBoxes.length === 0) {
                 alert("請先在左側搜尋結果中「勾選」您想要讓 AI 分析的判決書！");
                 return;
             }
 
-            // 過濾出被勾選的案件完整資料
             const selectedIds = Array.from(checkedBoxes).map(cb => cb.value);
             const selectedJudgments = judgmentsData.filter(item => selectedIds.includes(item.id));
 
@@ -852,7 +898,6 @@
                 <span style="color:#64748b; font-size:0.88em; margin-left:4px;">AI 正在研讀您選取的 <strong>${selectedJudgments.length}</strong> 筆案件並統整分析中...</span>
             `);
 
-            // AI 將精準閱讀被勾選的資料
             const contentsToSent = selectedJudgments.map(item => {
                 const idParts = item.id ? item.id.split(',') : [];
                 const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
@@ -914,7 +959,7 @@
                 "'": '&#039;'
             };
             return text.replace(/[&<>"']/g, m => map[m]);
-        }
+        }   
     </script>
 </body>
 </html>
