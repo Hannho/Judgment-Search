@@ -531,8 +531,10 @@
                     judgmentsData = [];
                     resultsDiv.innerHTML = `
                         <div class="table-toolbar">
-                            <span>⭐ ${escapeHtml(currentUser.name)} 的最愛</span>
-                            ${renderFolderFilter(filterFolderId)}
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span>📁 ${escapeHtml(currentUser.name)} 的案件</span>
+                                ${renderFolderFilter(filterFolderId)}
+                            </div>
                             <button class="btn-toggle" onclick="exitFavorites()">← 回到搜尋結果</button>
                         </div>
                         <p style="padding:20px; color:#666;">此資料夾尚未收藏任何判決。</p>`;
@@ -550,9 +552,14 @@
 
                 let html = `
                     <div class="table-toolbar">
-                        <span>⭐ ${escapeHtml(currentUser.name)} 的最愛，共 <strong>${judgmentsData.length}</strong> 筆</span>
-                        ${renderFolderFilter(filterFolderId)}
-                        <button class="btn-toggle" onclick="exitFavorites()">← 回到搜尋結果</button>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span>📁 ${escapeHtml(currentUser.name)} 的案件，共 <strong>${judgmentsData.length}</strong> 筆</span>
+                            ${renderFolderFilter(filterFolderId)}
+                        </div>
+                        <div>
+                            <button class="btn-primary" style="padding: 6px 14px; background: #2e7d32;" onclick="exportSelectedJudgments()">📥 匯出選取判決</button>
+                            <button class="btn-toggle" onclick="exitFavorites()">← 回到搜尋結果</button>
+                        </div>
                     </div>
                     <table class="result-table"><thead><tr>
                         <th width="4%" style="text-align:center;"><input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)" title="全選/取消全選"></th>
@@ -604,6 +611,59 @@
         function exitFavorites() {
             isFavoritesMode = false;
             fetchJudgments(1);
+        }
+
+        // ==========================================
+        // 匯出選取判決 (案號、主文、理由)
+        // ==========================================
+        function exportSelectedJudgments() {
+            const checkedBoxes = document.querySelectorAll('.judgment-cb:checked');
+            if (checkedBoxes.length === 0) {
+                alert("請先勾選想要匯出的判決書！");
+                return;
+            }
+
+            const selectedIds = Array.from(checkedBoxes).map(cb => cb.value);
+            const selectedItems = judgmentsData.filter(item => selectedIds.includes(item.id));
+
+            let exportText = `=================================================\n`;
+            exportText += `  裁判書選取匯出清單\n`;
+            exportText += `  匯出使用者：${currentUser ? currentUser.name : "未知"}\n`;
+            exportText += `  匯出筆數：${selectedItems.length} 筆\n`;
+            exportText += `  匯出日期：${new Date().toLocaleDateString()}\n`;
+            exportText += `=================================================\n\n`;
+
+            selectedItems.forEach((item, idx) => {
+                const idParts = item.id.split(',');
+                const yr = item.year || idParts[1] || "";
+                const tp = item.case_type || idParts[2] || "";
+                const no = item.case_no || idParts[3] || "";
+                const courtName = getCourtName(item);
+                const docKind = getDocumentKind(item);
+                const fullTitle = `${courtName} ${yr} 年度 ${tp} 字第 ${no} 號${docKind}`;
+
+                const mainText = item.main_text && item.main_text.trim() ? item.main_text.trim() : "（無記載主文）";
+                const reason = item.reason && item.reason.trim() ? item.reason.trim() : (item.content || "（無內文）");
+
+                exportText += `-------------------------------------------------\n`;
+                exportText += `【案件 ${idx + 1}】\n`;
+                exportText += `【裁判案號】：${fullTitle}\n`;
+                exportText += `【裁判日期】：${formatROCDate(item.date)}\n`;
+                exportText += `【裁判案由】：${item.title || "無案由"}\n`;
+                exportText += `【主文】：\n${mainText}\n\n`;
+                exportText += `【理由】：\n${reason}\n`;
+                exportText += `-------------------------------------------------\n\n`;
+            });
+
+            const blob = new Blob([exportText], { type: "text/plain;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `裁判書匯出_${currentUser ? currentUser.name : "案件"}_${new Date().toISOString().slice(0, 10)}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }
 
         const courtMapping = {

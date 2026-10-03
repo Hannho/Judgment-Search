@@ -200,7 +200,7 @@ def build_search_conditions(query: JudgmentSearchQuery):
     return where_sql, params
 
 # ==========================================
-# API 1：高速讀取前 10 筆資料 (包含 main_text)
+# API 1：高速讀取前 10 筆資料 (包含 main_text, reason)
 # ==========================================
 @app.post("/api/judgments/list")
 def get_judgments_list(query: JudgmentSearchQuery):
@@ -219,7 +219,8 @@ def get_judgments_list(query: JudgmentSearchQuery):
             
             limit = 10
             offset = (query.page - 1) * limit
-            data_sql = f"SELECT id, year, case_type, case_no, date, title, content, pdf_url, main_text FROM judgments {where_sql} {order_clause} LIMIT %s OFFSET %s"
+            # 加入 reason 欄位
+            data_sql = f"SELECT id, year, case_type, case_no, date, title, content, pdf_url, main_text, reason FROM judgments {where_sql} {order_clause} LIMIT %s OFFSET %s"
             
             cursor.execute(data_sql, tuple(params + [limit, offset]))
             results = [dict(row) for row in cursor.fetchall()]
@@ -230,7 +231,7 @@ def get_judgments_list(query: JudgmentSearchQuery):
         if conn: conn.close()
 
 # ==========================================
-# API 1-2：依判決 id 取回資料 (我的最愛 / 批次查詢用)
+# API 1-2：依判決 id 取回資料 (包含 reason)
 # ==========================================
 class IdsQuery(BaseModel):
     ids: List[str]
@@ -245,7 +246,8 @@ def get_judgments_by_ids(q: IdsQuery):
         conn = get_db_connection()
         with conn.cursor() as cursor:
             cursor.execute(
-                "SELECT id, year, case_type, case_no, date, title, content, pdf_url, main_text "
+                # 加入 reason 欄位
+                "SELECT id, year, case_type, case_no, date, title, content, pdf_url, main_text, reason "
                 "FROM judgments WHERE id = ANY(%s)",
                 (ids,)
             )
