@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>裁判書搜尋與歷審查詢系統</title>
+    <!-- 載入外部 CSS -->
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="icon" type="image/png" href="/static/favicon.png">
+</head>
+<body>
+
+    <div style="float:right; font-size:0.95em;">
+        👤 <select id="userSelect" onchange="onUserChange(this)"></select>
+        <button class="btn-toggle" type="button" onclick="editUser()" title="修改目前使用者的名稱">✏️ 編輯</button>
+        <button class="btn-toggle" type="button" onclick="deleteUser()" style="color: #d32f2f; border-color: #ffcdd2; background: #ffebee;" title="刪除目前使用者">🗑️ 刪除</button>
+        <button class="btn-toggle" type="button" onclick="addUser()">＋ 新增使用者</button>
+    </div>
+    <h2>⚖️ 裁判書搜尋與歷審查詢系統</h2>
+
+    <!-- 搜尋條件區塊 -->
+    <div class="search-box">
+        <div class="basic-search-row">
+            <select id="courtInput" style="width: 280px;"><option value="">全部法院</option></select>
+            <input type="text" id="quickKeywordInput" placeholder="全文或案號快速檢索 (多個關鍵字以空格分開)..." style="flex: 1; min-width: 220px;">
+            <button class="btn-primary" onclick="searchJudgments()">🔍 開始搜尋</button>
+            <button class="btn-toggle" type="button" onclick="toggleAdvancedSearch()">⚙️ <span id="toggleText">展開進階搜尋</span></button>
+            <button class="btn-reset" type="button" onclick="resetSearch()">重設</button>
+            <button class="btn-toggle" type="button" onclick="enterFavorites()">📁 案件資料夾 <span id="favCount">(0)</span></button>
+        </div>
+
+        <div id="searchErrorMessage" class="alert-error"></div>
+
+        <!-- 司法院風格進階搜尋面板 -->
+        <div id="advancedPanel" class="advanced-panel" style="display: none;">
+            <table class="adv-table">
+                <tr>
+                    <td class="adv-label">案件類別</td>
+                    <td>
+                        <label><input type="checkbox" name="caseCategory" value="憲法"> 憲法</label>&nbsp;&nbsp;
+                        <label><input type="checkbox" name="caseCategory" value="民事"> 民事</label>&nbsp;&nbsp;
+                        <label><input type="checkbox" name="caseCategory" value="刑事"> 刑事</label>&nbsp;&nbsp;
+                        <label><input type="checkbox" name="caseCategory" value="行政"> 行政</label>&nbsp;&nbsp;
+                        <label><input type="checkbox" name="caseCategory" value="懲戒"> 懲戒</label>
+                        <span class="hint-text">(未勾選預設為全選)</span>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="adv-label">裁判書類別</td>
+                    <td>
+                        <label><input type="radio" name="docType" value="" checked> 全部</label>&nbsp;&nbsp;
+                        <label><input type="radio" name="docType" value="判決"> 判決</label>&nbsp;&nbsp;
+                        <label><input type="radio" name="docType" value="裁定"> 裁定</label>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="adv-label">裁判字號</td>
+                    <td>
+                        <input type="text" id="advYear" class="input-mini" placeholder="115"> 年度&nbsp;
+                        <input type="text" id="advCaseType" class="input-short" placeholder="簡/訴/交易"> 字第&nbsp;
+                        <input type="text" id="advNoStart" class="input-mini" placeholder="號數起"> 號
+                        至 <input type="text" id="advNoEnd" class="input-mini" placeholder="號數迄"> 號
+                        <span style="color: #666; font-size: 0.85em; margin-left: 8px;">(單一號數填左側即可)</span>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="adv-label">裁判期間</td>
+                    <td>
+                        民國 
+                        <input type="number" id="startYear" class="input-mini" placeholder="114"> 年
+                        <input type="number" id="startMonth" class="input-mini" min="1" max="12" placeholder="1"> 月
+                        <input type="number" id="startDay" class="input-mini" min="1" max="31" placeholder="1"> 日
+                        至
+                        <input type="number" id="endYear" class="input-mini" placeholder="115"> 年
+                        <input type="number" id="endMonth" class="input-mini" min="1" max="12" placeholder="12"> 月
+                        <input type="number" id="endDay" class="input-mini" min="1" max="31" placeholder="31"> 日
+                    </td>
+                </tr>
+                <tr>
+                    <td class="adv-label">裁判案由</td>
+                    <td>
+                        <input type="text" id="advTitle" class="input-medium" placeholder="多關鍵字以空格分開，如：過失 傷害">
+                    </td>
+                </tr>
+                <tr>
+                    <td class="adv-label">裁判主文</td>
+                    <td>
+                        <input type="text" id="advMainText" class="input-wide" placeholder="多關鍵字以空格分開，如：有期徒刑 易科罰金 緩刑">
+                    </td>
+                </tr>
+                <tr>
+                    <td class="adv-label">全文內容</td>
+                    <td>
+                        <input type="text" id="advContent" class="input-wide" placeholder="如：(法院+管轄)&公證處-撤銷">
+                        <div style="font-size: 0.85em; color: #555; margin-top: 6px; line-height: 1.4;">
+                            💡 <strong>進階檢索語法：</strong> 
+                            <code>+</code> (或) &nbsp;|&nbsp; 
+                            <code>-</code> (不含) &nbsp;|&nbsp; 
+                            <code>&amp;</code> (且) &nbsp;|&nbsp; 
+                            <code>()</code> (群組組合)
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="adv-label">裁判大小</td>
+                    <td>
+                        <input type="number" id="advSizeMin" class="input-mini" placeholder="0"> KB ～ 
+                        <input type="number" id="advSizeMax" class="input-mini" placeholder="500"> KB
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- 網頁主要左右佈局 -->
+    <div class="page-layout">
+        
+        <!-- 左側：條件統計側邊欄 (Facet Search) -->
+        <div id="facetSidebar" class="facet-sidebar" style="display: none;"></div>
+
+        <!-- 中間：搜尋結果與詳情 -->
+        <div class="content-area">
+            <div class="main-container">
+                <!-- 搜尋結果列表 -->
+                <div id="results" class="list-panel">
+                    <p>資料從資料庫載入中，請稍候...</p>
+                </div>
+
+                <!-- 彈出/下方：判決書詳情與歷審紀錄 -->
+                <div id="sidePanel" class="detail-panel">
+                    <button class="close-panel-btn" onclick="closeSidePanel()" title="關閉全文">✖</button>
+                    <!-- 畫重點操作提示與清除按鈕 -->
+                    <div style="float: right; margin-right: 40px; font-size: 0.85em; color: #555;">
+                        🖍️ 反白文字後按 <b>空白鍵</b>，選擇螢光筆或文字註解
+                        <button class="btn-toggle" style="margin-left: 10px; padding: 2px 6px;" onclick="clearAllHighlights()">清除全部註記</button>
+                    </div>
+                    
+                    <h3 id="sideTitle" style="color: #0000cc; margin-top: 0; padding-right: 35px;"></h3>
+                    <div id="sideMeta" style="color: #666; font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 10px;"></div>
+                    
+                    <div id="historyLoading" class="history-loading">
+                        ⏳ 正在啟動背景爬蟲，即時抓取歷審紀錄，請稍候約 5-10 秒...
+                    </div>
+                    <div id="sideHistory" class="history-box" style="display: none;"></div>
+
+                    <div id="sideBody" style="white-space: pre-wrap; font-size: 1.05em; line-height: 1.8; color: #222; margin-top: 15px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右側：🤖 AI 智慧分析助理側邊欄 -->
+        <div class="ai-sidebar">
+            <div class="chat-card">
+                <div class="chat-header">
+                    <h4>🤖 裁判書 AI 智慧分析助理</h4>
+                    <button class="chat-clear-btn" type="button" onclick="clearChatMessages()">清空對話</button>
+                </div>
+                <div id="chatMessages" class="chat-messages">
+                    <div class="chat-bubble-row bot">
+                        <div class="chat-avatar bot-avatar">AI</div>
+                        <div class="chat-bubble bot-bubble">
+                            你好！我是裁判書分析助理。請先在左側搜尋結果中<strong>勾選</strong>你想分析的案件，然後對我提問（例如：「這幾件詐欺案的被告大多判刑多久？」）。
+                        </div>
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <input type="text" id="chatInput" placeholder="請輸入對勾選案件的提問..." onkeydown="handleChatKeyDown(event)">
+                    <button id="chatSendBtn" class="chat-send-btn" onclick="sendChatMessage()">發送</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 空白鍵選單 / 文字註解輸入框 / 註記檢視視窗 -->
+    <div id="annMenu" class="ann-floating">
+        <div class="ann-menu-title">對選取的文字…</div>
+        <button type="button" class="ann-menu-btn" onclick="applyHighlightFromMenu()">🖍️ 螢光筆 <small>(H)</small></button>
+        <button type="button" class="ann-menu-btn" onclick="startNoteFromMenu()">📝 文字註解 <small>(N)</small></button>
+        <div class="ann-menu-hint">空白鍵或 Esc 關閉</div>
+    </div>
+    <div id="annNoteBox" class="ann-floating" style="width: 300px;">
+        <div class="ann-menu-title">📝 文字註解</div>
+        <div id="annNoteQuote" class="ann-note-quote"></div>
+        <textarea id="annNoteInput" rows="4" placeholder="輸入註解內容…（Ctrl/⌘ + Enter 儲存）" onkeydown="handleNoteKeyDown(event)"></textarea>
+        <div class="ann-note-actions">
+            <button type="button" class="btn-secondary" onclick="hideAnnUI()">取消</button>
+            <button type="button" class="btn-primary" onclick="saveNoteFromBox()">儲存</button>
+        </div>
+    </div>
+    <div id="annPopover" class="ann-floating" style="max-width: 320px;"></div>
+
+    <!-- 收藏 Modal -->
+    <div id="favModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span id="favModalTitle">新增書籤</span>
+                <span class="modal-close" onclick="closeFavModal()">✖</span>
+            </div>
+            <input type="hidden" id="favJudgmentId">
+            <div class="form-group">
+                <label>判決字號</label>
+                <input type="text" id="favTitleDisplay" disabled style="background:#eee; color:#666;">
+            </div>
+            <div class="form-group">
+                <label>資料夾</label>
+                <div style="display: flex; gap: 5px;">
+                    <select id="favFolderSelect" style="flex: 1;">
+                        <option value="">（未分類）</option>
+                    </select>
+                    <button type="button" onclick="createNewFolder()" style="padding: 0 10px;">＋ 新增</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>備註</label>
+                <textarea id="favNoteInput" rows="3" placeholder="請輸入備註..."></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" id="btnRemoveFav" style="display:none; color:red; border-color:red;" onclick="removeFavFromModal()">移除</button>
+                <button type="button" class="btn-primary" onclick="saveFavFromModal()">完成</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 依序載入模組化 JS 檔案 -->
+    <script src="/static/js/globals.js"></script>
+    <script src="/static/js/user.js"></script>
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/highlight.js"></script>
+    <script src="/static/js/chat.js"></script>
+</body>
+</html>
