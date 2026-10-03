@@ -109,3 +109,16 @@ def remove_favorite(judgment_id: str, x_user_id: Optional[str] = Header(None)):
     uid = get_uid(x_user_id)
     run_sql("DELETE FROM favorites WHERE user_id = %s AND judgment_id = %s", (uid, judgment_id))
     return {"ok": True}
+
+@router.delete("/folders/{folder_id}")
+def delete_folder(folder_id: int, x_user_id: Optional[str] = Header(None)):
+    uid = get_uid(x_user_id)
+    try:
+        # 👇 1. 先強制刪除該資料夾內的所有收藏紀錄
+        run_sql("DELETE FROM favorites WHERE folder_id = %s AND user_id = %s", (folder_id, uid))
+        
+        # 👇 2. 再刪除資料夾本身
+        run_sql("DELETE FROM folders WHERE id = %s AND user_id = %s", (folder_id, uid))
+        return {"ok": True}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": "刪除資料夾失敗"})

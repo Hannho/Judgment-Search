@@ -157,6 +157,35 @@ async function createNewFolder() {
         alert('建立資料夾失敗: ' + e.message);
     }
 }
+async function deleteFolderById(folderId, folderName) {
+    // 👇 修改了這裡的警告標語，明確告知案件會跟著刪除
+    if (!confirm(`⚠️ 警告：確定要刪除資料夾「${folderName}」嗎？\n\n（注意：資料夾刪除後，裡面收藏的【所有判決書】也都會跟著被徹底刪除，且無法復原！）`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/folders/${folderId}`, {
+            method: 'DELETE',
+            headers: apiHeaders()
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        alert(`資料夾「${folderName}」及其包含的所有案件已刪除！`);
+
+        // 重新載入使用者的資料夾清單
+        await loadFolders();
+
+        // 在新增書籤的彈跳視窗裡也更新下拉選單
+        updateFolderSelect("");
+
+        // 刪除成功後，自動將主畫面跳回「全部收藏」
+        showFavorites('ALL');
+        
+    } catch (e) {
+        alert('刪除資料夾失敗: ' + e.message);
+    }
+}
 
 function updateFolderSelect(selectedId = null) {
     const sel = document.getElementById('favFolderSelect');
@@ -275,6 +304,15 @@ async function showFavorites(filterFolderId = 'ALL') {
             favList = favListRaw.filter(f => String(f.folder_id) === String(filterFolderId));
         }
 
+        // 👇 判斷是否要顯示「刪除此資料夾」按鈕
+        let deleteFolderBtn = "";
+        if (filterFolderId !== 'ALL' && filterFolderId !== 'NONE') {
+            const currentFolder = foldersList.find(f => String(f.id) === String(filterFolderId));
+            if (currentFolder) {
+                deleteFolderBtn = `<button class="btn-secondary" style="padding: 4px 10px; font-size: 0.9em; color: #d32f2f; border-color: #ffcdd2; background: #ffebee;" onclick="deleteFolderById(${currentFolder.id}, '${escapeHtml(currentFolder.name)}')">🗑️ 刪除此資料夾</button>`;
+            }
+        }
+
         if (favList.length === 0) {
             judgmentsData = [];
             resultsDiv.innerHTML = `
@@ -282,6 +320,7 @@ async function showFavorites(filterFolderId = 'ALL') {
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span>📁 ${escapeHtml(currentUser.name)} 的案件</span>
                         ${renderFolderFilter(filterFolderId)}
+                        ${deleteFolderBtn}
                     </div>
                     <button class="btn-toggle" onclick="exitFavorites()">← 回到搜尋結果</button>
                 </div>
@@ -303,6 +342,7 @@ async function showFavorites(filterFolderId = 'ALL') {
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <span>📁 ${escapeHtml(currentUser.name)} 的案件，共 <strong>${judgmentsData.length}</strong> 筆</span>
                     ${renderFolderFilter(filterFolderId)}
+                    ${deleteFolderBtn}
                 </div>
                 <div>
                     <button class="btn-primary" style="padding: 6px 14px; background: #2e7d32;" onclick="exportSelectedJudgments()">📥 匯出選取判決</button>
