@@ -5,48 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>裁判書搜尋與歷審查詢系統</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.5); display: none;
-            align-items: center; justify-content: center; z-index: 1000;
-        }
-        .modal-content {
-            background: white; padding: 20px; border-radius: 8px;
-            width: 400px; max-width: 90%; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .modal-header { font-size: 1.2em; font-weight: bold; margin-bottom: 15px; display: flex; justify-content: space-between; }
-        .modal-close { cursor: pointer; color: #666; }
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; color: #555; }
-        .form-group input[type="text"], .form-group select, .form-group textarea {
-            width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;
-        }
-        .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-        .btn-secondary { padding: 8px 15px; border: 1px solid #ccc; background: #f9f9f9; border-radius: 4px; cursor: pointer; }
-
-        /* ===== 空白鍵選單 / 文字註解 ===== */
-        .ann-floating { position: fixed; z-index: 2000; display: none; background: #fff; border: 1px solid #bbb; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.22); padding: 10px 12px; font-size: 0.92em; }
-        .ann-menu-title { font-weight: bold; color: #555; margin-bottom: 8px; }
-        .ann-menu-btn { display: block; width: 100%; text-align: left; padding: 8px 12px; margin-bottom: 6px; border: 1px solid #ddd; background: #fafafa; border-radius: 6px; cursor: pointer; font-size: 1em; }
-        .ann-menu-btn:hover { background: #fff8e1; border-color: #ffc107; }
-        .ann-menu-btn small { color: #888; }
-        .ann-menu-hint { color: #999; font-size: 0.8em; margin-top: 2px; }
-        .ann-note-quote { color: #777; font-size: 0.85em; border-left: 3px solid #ffc107; padding-left: 8px; margin-bottom: 8px; max-height: 3.2em; overflow: hidden; }
-        #annNoteInput { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; font-size: 0.95em; }
-        .ann-note-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
-        .ann-pop-item { padding: 6px 0; border-bottom: 1px solid #eee; }
-        .ann-pop-item:last-child { border-bottom: none; }
-        .ann-pop-head { font-weight: bold; color: #444; }
-        .ann-pop-quote { font-weight: normal; color: #888; font-size: 0.9em; }
-        .ann-pop-note { margin: 6px 0; white-space: pre-wrap; word-break: break-word; color: #222; background: #fffde7; padding: 6px 8px; border-radius: 4px; }
-        .ann-pop-actions { display: flex; gap: 12px; margin-top: 4px; }
-        .ann-pop-actions a { cursor: pointer; color: #1976d2; font-size: 0.9em; }
-        .ann { cursor: pointer; }
-        mark.highlight-mark { background-color: #fff59d; }
-        .ann-note { border-bottom: 2px dashed #e65100; }
-        .ann-note-end::after { content: "📝"; font-size: 0.75em; margin-left: 2px; }
-    </style>
 </head>
 <body>
 
