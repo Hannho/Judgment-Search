@@ -24,6 +24,28 @@
         }
         .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
         .btn-secondary { padding: 8px 15px; border: 1px solid #ccc; background: #f9f9f9; border-radius: 4px; cursor: pointer; }
+
+        /* ===== 空白鍵選單 / 文字註解 ===== */
+        .ann-floating { position: fixed; z-index: 2000; display: none; background: #fff; border: 1px solid #bbb; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.22); padding: 10px 12px; font-size: 0.92em; }
+        .ann-menu-title { font-weight: bold; color: #555; margin-bottom: 8px; }
+        .ann-menu-btn { display: block; width: 100%; text-align: left; padding: 8px 12px; margin-bottom: 6px; border: 1px solid #ddd; background: #fafafa; border-radius: 6px; cursor: pointer; font-size: 1em; }
+        .ann-menu-btn:hover { background: #fff8e1; border-color: #ffc107; }
+        .ann-menu-btn small { color: #888; }
+        .ann-menu-hint { color: #999; font-size: 0.8em; margin-top: 2px; }
+        .ann-note-quote { color: #777; font-size: 0.85em; border-left: 3px solid #ffc107; padding-left: 8px; margin-bottom: 8px; max-height: 3.2em; overflow: hidden; }
+        #annNoteInput { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; font-size: 0.95em; }
+        .ann-note-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+        .ann-pop-item { padding: 6px 0; border-bottom: 1px solid #eee; }
+        .ann-pop-item:last-child { border-bottom: none; }
+        .ann-pop-head { font-weight: bold; color: #444; }
+        .ann-pop-quote { font-weight: normal; color: #888; font-size: 0.9em; }
+        .ann-pop-note { margin: 6px 0; white-space: pre-wrap; word-break: break-word; color: #222; background: #fffde7; padding: 6px 8px; border-radius: 4px; }
+        .ann-pop-actions { display: flex; gap: 12px; margin-top: 4px; }
+        .ann-pop-actions a { cursor: pointer; color: #1976d2; font-size: 0.9em; }
+        .ann { cursor: pointer; }
+        mark.highlight-mark { background-color: #fff59d; }
+        .ann-note { border-bottom: 2px dashed #e65100; }
+        .ann-note-end::after { content: "📝"; font-size: 0.75em; margin-left: 2px; }
     </style>
 </head>
 <body>
@@ -149,8 +171,8 @@
                     <button class="close-panel-btn" onclick="closeSidePanel()" title="關閉全文">✖</button>
                     <!-- 新增：畫重點操作提示與清除按鈕 -->
                     <div style="float: right; margin-right: 40px; font-size: 0.85em; color: #555;">
-                        🖍️ 反白文字後按 <b>H</b> 畫重點
-                        <button class="btn-toggle" style="margin-left: 10px; padding: 2px 6px;" onclick="clearAllHighlights()">清除重點</button>
+                        🖍️ 反白文字後按 <b>空白鍵</b>，選擇螢光筆或文字註解
+                        <button class="btn-toggle" style="margin-left: 10px; padding: 2px 6px;" onclick="clearAllHighlights()">清除全部註記</button>
                     </div>
                     
                     <h3 id="sideTitle" style="color: #0000cc; margin-top: 0; padding-right: 35px;"></h3>
@@ -189,6 +211,24 @@
         </div>
 
     </div>
+
+    <!-- 空白鍵選單 / 文字註解輸入框 / 註記檢視視窗 -->
+    <div id="annMenu" class="ann-floating">
+        <div class="ann-menu-title">對選取的文字…</div>
+        <button type="button" class="ann-menu-btn" onclick="applyHighlightFromMenu()">🖍️ 螢光筆 <small>(H)</small></button>
+        <button type="button" class="ann-menu-btn" onclick="startNoteFromMenu()">📝 文字註解 <small>(N)</small></button>
+        <div class="ann-menu-hint">空白鍵或 Esc 關閉</div>
+    </div>
+    <div id="annNoteBox" class="ann-floating" style="width: 300px;">
+        <div class="ann-menu-title">📝 文字註解</div>
+        <div id="annNoteQuote" class="ann-note-quote"></div>
+        <textarea id="annNoteInput" rows="4" placeholder="輸入註解內容…（Ctrl/⌘ + Enter 儲存）" onkeydown="handleNoteKeyDown(event)"></textarea>
+        <div class="ann-note-actions">
+            <button type="button" class="btn-secondary" onclick="hideAnnUI()">取消</button>
+            <button type="button" class="btn-primary" onclick="saveNoteFromBox()">儲存</button>
+        </div>
+    </div>
+    <div id="annPopover" class="ann-floating" style="max-width: 320px;"></div>
 
     <!-- 收藏 Modal -->
     <div id="favModal" class="modal-overlay">
@@ -1240,23 +1280,12 @@
             document.getElementById('sideMeta').innerHTML = `<strong>日期：</strong>${formatROCDate(item.date)} &nbsp;|&nbsp; <strong>案由：</strong>${item.title || "無"} &nbsp;|&nbsp; <strong>大小：</strong>${sizeKB} KB`;
             
             // 先預設把純文字塞進去
-            document.getElementById('sideBody').textContent = item.content;
+            document.getElementById('sideBody').textContent = getSideText(item);
             document.getElementById('sidePanel').style.display = "block";
 
-            // === 👇 新增：載入使用者專屬的重點紀錄 👇 ===
+            // === 載入使用者專屬的重點與註解 ===
             currentHighlights = [];
-            if (currentUser) {
-                try {
-                    const hlRes = await fetch(`/api/highlights/${encodeURIComponent(id)}`, { headers: apiHeaders() });
-                    const hlData = await hlRes.json();
-                    if (hlData && hlData.data) {
-                        currentHighlights = hlData.data;
-                        renderHighlights(); // 若有重點，重新把文字加上黃底 HTML
-                    }
-                } catch(e) {
-                    console.error("載入重點失敗", e);
-                }
-            }
+            loadSideHighlights(id);
             // ============================================
 
             const historyBox = document.getElementById('sideHistory');
@@ -1435,88 +1464,349 @@
             return text.replace(/[&<>"']/g, m => map[m]);
         }   
         // ==========================================
-        // 畫重點功能 (H 快捷鍵)
+        // 畫重點 / 文字註解功能 (反白文字後按空白鍵叫出選單)
+        // 儲存格式 (沿用 /api/highlights，不需改後端)：currentHighlights 陣列的元素可為
+        //   1) 字串           → 舊格式的螢光筆，整篇所有相同文字都會標示
+        //   2) 物件 { type: 'highlight' | 'note', start, end, text, note }
+        //                     → 新格式，只標示選取的那一處
         // ==========================================
         let currentHighlights = [];
+        let pendingSel = null;          // 按空白鍵當下的選取範圍
+        let editingAnnIndex = null;     // 正在編輯的註解索引
 
-        // 監聽鍵盤事件：按下 H 或 h 時，將選取的文字畫重點
-        document.addEventListener('keydown', async function(e) {
-            if (e.key === 'h' || e.key === 'H') {
-                // 如果目前沒開著判決書，或是沒有登入使用者，就不動作
-                if (!currentSideId || !currentUser) return;
-                
-                // 確認目前游標焦點不在輸入框內 (避免打字時誤觸)
-                const activeTag = document.activeElement.tagName.toLowerCase();
-                if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
+        // 判決全文：統一換行符號，確保「畫面上的文字」與「計算位置用的文字」完全一致
+        function getSideText(item) {
+            return (item && item.content ? item.content : "").replace(/\r\n?/g, "\n");
+        }
 
-                const selection = window.getSelection();
-                if (!selection.rangeCount || selection.isCollapsed) return;
+        // 取得目前在 sideBody 內選取的文字與位置
+        function getSelectionInfo() {
+            const sel = window.getSelection();
+            if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
 
-                const range = selection.getRangeAt(0);
-                const sideBody = document.getElementById('sideBody');
+            const body = document.getElementById('sideBody');
+            const range = sel.getRangeAt(0);
+            if (!body.contains(range.startContainer) || !body.contains(range.endContainer)) return null;
 
-                // 確認選取的範圍確實是在 sideBody 裡面
-                if (!sideBody.contains(range.commonAncestorContainer)) return;
+            const pre = document.createRange();
+            pre.selectNodeContents(body);
+            pre.setEnd(range.startContainer, range.startOffset);
+            let start = pre.toString().length;
+            let text = range.toString();
 
-                // 將選取的純文字存起來 (最簡單的實作方式：存關鍵字，然後重新取代)
-                const selectedText = selection.toString().trim();
-                if (selectedText.length === 0) return;
+            const lead = text.length - text.trimStart().length;
+            text = text.trim();
+            if (!text) return null;
+            start += lead;
 
-                // 將這段文字加入目前的重點清單 (避免重複)
-                if (!currentHighlights.includes(selectedText)) {
-                    currentHighlights.push(selectedText);
-                }
-
-                // 取消原本系統的反白選取狀態
-                selection.removeAllRanges();
-
-                // 重新渲染畫面並儲存到後端
-                renderHighlights();
-                await saveHighlightsToBackend();
+            // 驗證位置是否與原文吻合，不吻合就退而求其次，用第一個出現的位置
+            const item = judgmentsData.find(j => j.id === currentSideId);
+            const full = getSideText(item);
+            if (full.substring(start, start + text.length) !== text) {
+                const i = full.indexOf(text);
+                if (i === -1) return null;
+                start = i;
             }
+
+            const rects = range.getClientRects();
+            const rect = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
+            return { start: start, end: start + text.length, text: text, rect: rect };
+        }
+
+        // 把浮動視窗放在指定位置附近，並避免超出螢幕
+        function placeFloating(el, rect) {
+            el.style.display = 'block';
+            const w = el.offsetWidth, h = el.offsetHeight;
+            let left = rect.left;
+            let top = rect.bottom + 8;
+            if (left + w > window.innerWidth - 10) left = window.innerWidth - w - 10;
+            if (left < 10) left = 10;
+            if (top + h > window.innerHeight - 10) top = Math.max(10, rect.top - h - 8);
+            el.style.left = left + 'px';
+            el.style.top = top + 'px';
+        }
+
+        function hideAnnUI() {
+            ['annMenu', 'annNoteBox', 'annPopover'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+            pendingSel = null;
+            editingAnnIndex = null;
+        }
+
+        // ---- 空白鍵與選單快速鍵 ----
+        document.addEventListener('keydown', function (e) {
+            const menu = document.getElementById('annMenu');
+            const menuOpen = menu.style.display === 'block';
+
+            if (e.key === 'Escape') { hideAnnUI(); return; }
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+            // 選單開啟時：H / 1 = 螢光筆，N / 2 = 文字註解，空白鍵 = 關閉
+            if (menuOpen) {
+                const k = e.key.toLowerCase();
+                if (k === 'h' || k === '1') { e.preventDefault(); applyHighlightFromMenu(); return; }
+                if (k === 'n' || k === '2') { e.preventDefault(); startNoteFromMenu(); return; }
+                if (e.key === ' ') { e.preventDefault(); hideAnnUI(); }
+                return;
+            }
+
+            // 選單未開啟時：反白文字後按空白鍵叫出選單
+            if (e.key !== ' ' || e.shiftKey) return;
+            if (!currentSideId || document.getElementById('sidePanel').style.display === 'none') return;
+
+            // 游標在輸入框、按鈕、下拉選單內時，不攔截空白鍵（避免打字或操作按鈕時誤觸）
+            const tag = (e.target.tagName || '').toLowerCase();
+            if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button' || e.target.isContentEditable) return;
+
+            const info = getSelectionInfo();
+            if (!info) return;     // 沒有選取文字時，空白鍵維持原本的捲動功能
+
+            e.preventDefault();
+            if (!currentUser) {
+                alert("請先在右上角選擇使用者，重點與註解才能儲存。");
+                return;
+            }
+            pendingSel = info;
+            placeFloating(menu, info.rect);
         });
 
-        // 根據 currentHighlights 陣列，重新把 sideBody 裡面的字加上黃色標籤
+        // 點擊選單以外的地方就關閉
+        document.addEventListener('mousedown', function (e) {
+            if (e.target.closest('#annMenu, #annNoteBox, #annPopover')) return;
+            hideAnnUI();
+        });
+
+        // 判決面板捲動時，收起選單與彈出視窗（註解輸入框不收，避免打到一半的文字不見）
+        document.getElementById('sidePanel').addEventListener('scroll', function () {
+            document.getElementById('annMenu').style.display = 'none';
+            document.getElementById('annPopover').style.display = 'none';
+        });
+
+        // ---- 選單動作 ----
+        async function applyHighlightFromMenu() {
+            const info = pendingSel;
+            hideAnnUI();
+            if (!info) return;
+            currentHighlights.push({ type: 'highlight', start: info.start, end: info.end, text: info.text });
+            window.getSelection().removeAllRanges();
+            renderHighlights();
+            await saveHighlightsToBackend();
+        }
+
+        function startNoteFromMenu() {
+            if (!pendingSel) return;
+            document.getElementById('annMenu').style.display = 'none';
+            editingAnnIndex = null;
+            openNoteBox(pendingSel.text, "", pendingSel.rect);
+        }
+
+        function openNoteBox(quoteText, noteText, rect) {
+            const box = document.getElementById('annNoteBox');
+            const shortQuote = quoteText.length > 60 ? quoteText.substring(0, 60) + '…' : quoteText;
+            document.getElementById('annNoteQuote').textContent = shortQuote;
+            document.getElementById('annNoteInput').value = noteText;
+            placeFloating(box, rect);
+            document.getElementById('annNoteInput').focus();
+        }
+
+        function handleNoteKeyDown(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                saveNoteFromBox();
+            }
+        }
+
+        async function saveNoteFromBox() {
+            const note = document.getElementById('annNoteInput').value.trim();
+            if (!note) { alert('請輸入註解內容'); return; }
+
+            if (editingAnnIndex !== null) {
+                const a = currentHighlights[editingAnnIndex];
+                if (a && typeof a === 'object') a.note = note;
+            } else if (pendingSel) {
+                currentHighlights.push({
+                    type: 'note', start: pendingSel.start, end: pendingSel.end,
+                    text: pendingSel.text, note: note
+                });
+                window.getSelection().removeAllRanges();
+            }
+            hideAnnUI();
+            renderHighlights();
+            await saveHighlightsToBackend();
+        }
+
+        // ---- 點擊已標示的文字：查看 / 編輯 / 刪除 ----
+        document.getElementById('sideBody').addEventListener('click', function (e) {
+            const sel = window.getSelection();
+            if (sel && !sel.isCollapsed) return;          // 正在選取文字時不彈出
+            const el = e.target.closest('.ann');
+            if (!el) return;
+            const idxs = (el.dataset.idx || '').split(',').filter(Boolean).map(Number);
+            showAnnPopover(idxs, e.clientX, e.clientY);
+        });
+
+        function showAnnPopover(idxs, x, y) {
+            const pop = document.getElementById('annPopover');
+            const html = idxs.map(i => {
+                const a = currentHighlights[i];
+                if (a === undefined) return '';
+                const isStr = typeof a === 'string';
+                const type = isStr ? 'highlight' : (a.type || 'highlight');
+                const txt = isStr ? a : (a.text || '');
+                const q = escapeHtml(txt.length > 40 ? txt.substring(0, 40) + '…' : txt);
+
+                if (type === 'note') {
+                    return `<div class="ann-pop-item">
+                        <div class="ann-pop-head">📝 文字註解 <span class="ann-pop-quote">「${q}」</span></div>
+                        <div class="ann-pop-note">${escapeHtml(a.note || '')}</div>
+                        <div class="ann-pop-actions">
+                            <a onclick="editAnnotation(${i})">編輯</a>
+                            <a onclick="removeAnnotation(${i})" style="color:#d32f2f;">刪除</a>
+                        </div>
+                    </div>`;
+                }
+                return `<div class="ann-pop-item">
+                    <div class="ann-pop-head">🖍️ 螢光筆 <span class="ann-pop-quote">「${q}」</span></div>
+                    <div class="ann-pop-actions">
+                        <a onclick="removeAnnotation(${i})" style="color:#d32f2f;">取消重點</a>
+                    </div>
+                </div>`;
+            }).join('');
+            if (!html) return;
+            pop.innerHTML = html;
+            placeFloating(pop, { left: x, top: y, bottom: y });
+        }
+
+        function editAnnotation(idx) {
+            const a = currentHighlights[idx];
+            if (!a || typeof a !== 'object') return;
+            const pop = document.getElementById('annPopover');
+            const rect = pop.getBoundingClientRect();
+            hideAnnUI();
+            editingAnnIndex = idx;
+            openNoteBox(a.text || '', a.note || '', rect);
+        }
+
+        async function removeAnnotation(idx) {
+            const a = currentHighlights[idx];
+            if (a === undefined) return;
+            const isNote = (typeof a === 'object' && a.type === 'note');
+            if (!confirm(isNote ? "確定要刪除這則文字註解嗎？" : "確定要取消這段重點嗎？")) return;
+            currentHighlights.splice(idx, 1);
+            hideAnnUI();
+            renderHighlights();
+            await saveHighlightsToBackend();
+        }
+
+        // 保留舊函式名稱（相容之前的呼叫方式）
+        async function removeHighlight(index) {
+            await removeAnnotation(index);
+        }
+
+        // ---- 載入與繪製 ----
+        async function loadSideHighlights(id) {
+            if (!currentUser) return;
+            try {
+                const res = await fetch(`/api/highlights/${encodeURIComponent(id)}`, { headers: apiHeaders() });
+                const data = await res.json();
+                if (currentSideId !== id) return;        // 使用者已切換到別份判決，這份結果作廢
+                currentHighlights = (data && Array.isArray(data.data)) ? data.data : [];
+                renderHighlights();
+            } catch (e) {
+                console.error("載入重點失敗", e);
+            }
+        }
+
+        // 把 currentHighlights 轉成「在全文中的位置範圍」
+        function resolveAnnotations(text) {
+            const out = [];
+            currentHighlights.forEach((h, idx) => {
+                if (typeof h === 'string') {
+                    // 舊格式：整篇所有相同文字
+                    const trimmed = h.trim();
+                    if (!trimmed) return;
+                    const pattern = escapeRegExp(trimmed).replace(/\s+/g, '\\s+');
+                    let re;
+                    try { re = new RegExp(pattern, 'g'); } catch (e) { return; }
+                    for (const m of text.matchAll(re)) {
+                        if (m[0].length === 0) continue;
+                        out.push({ idx: idx, s: m.index, e: m.index + m[0].length, type: 'highlight' });
+                    }
+                    return;
+                }
+                if (!h || typeof h !== 'object' || !h.text) return;
+                let s = h.start, e = h.end;
+                if (!(Number.isInteger(s) && Number.isInteger(e) && s >= 0 && e > s && e <= text.length && text.substring(s, e) === h.text)) {
+                    // 位置對不上（例如資料更新過），改用文字重新尋找
+                    const i = text.indexOf(h.text);
+                    if (i === -1) return;
+                    s = i; e = i + h.text.length;
+                }
+                out.push({ idx: idx, s: s, e: e, type: h.type === 'note' ? 'note' : 'highlight' });
+            });
+            return out;
+        }
+
+        // 根據 currentHighlights 重新繪製 sideBody（螢光筆 = 黃底，文字註解 = 橘色虛線底線 + 📝）
         function renderHighlights() {
             if (!currentSideId) return;
             const item = judgmentsData.find(j => j.id === currentSideId);
             if (!item) return;
 
-            let contentHTML = escapeHtml(item.content || "");
-            
-            // 依長度排序，優先取代長的字串，避免短字串破壞長字串的 HTML 標籤
-            const sortedHighlights = [...currentHighlights].sort((a, b) => b.length - a.length);
+            const body = document.getElementById('sideBody');
+            const panel = document.getElementById('sidePanel');
+            const scrollTop = panel.scrollTop;
+            const text = getSideText(item);
+            const anns = resolveAnnotations(text);
 
-            sortedHighlights.forEach((hlText, index) => {
-                // 使用唯一佔位符替換，避免互相干擾
-                const safeHl = escapeRegExp(escapeHtml(hlText));
-                const regex = new RegExp(`(${safeHl})`, 'gi');
-                contentHTML = contentHTML.replace(regex, `<mark class="highlight-mark" onclick="removeHighlight(${index})">$1</mark>`);
-            });
+            if (anns.length === 0) {
+                body.textContent = text;
+                panel.scrollTop = scrollTop;
+                return;
+            }
 
-            document.getElementById('sideBody').innerHTML = contentHTML;
+            const cuts = new Set([0, text.length]);
+            anns.forEach(a => { cuts.add(a.s); cuts.add(a.e); });
+            const points = Array.from(cuts).sort((x, y) => x - y);
+
+            let html = "";
+            for (let i = 0; i < points.length - 1; i++) {
+                const s = points[i], e = points[i + 1];
+                if (s >= e) continue;
+                const piece = escapeHtml(text.substring(s, e));
+                const cover = anns.filter(a => a.s <= s && a.e >= e);
+                if (cover.length === 0) { html += piece; continue; }
+
+                const hasHighlight = cover.some(a => a.type === 'highlight');
+                const notes = cover.filter(a => a.type === 'note');
+                const cls = ['ann'];
+                if (hasHighlight) cls.push('highlight-mark');
+                if (notes.length > 0) cls.push('ann-note');
+                if (notes.some(a => a.e === e)) cls.push('ann-note-end');
+
+                const tagName = hasHighlight ? 'mark' : 'span';
+                const idxs = Array.from(new Set(cover.map(a => a.idx))).join(',');
+                html += `<${tagName} class="${cls.join(' ')}" data-idx="${idxs}">${piece}</${tagName}>`;
+            }
+            body.innerHTML = html;
+            panel.scrollTop = scrollTop;
         }
 
-        // 點擊已經畫好的重點，可以將其移除
-        async function removeHighlight(index) {
-            if (!confirm("確定要取消這段重點嗎？")) return;
-            currentHighlights.splice(index, 1);
-            renderHighlights();
-            await saveHighlightsToBackend();
-        }
-
-        // 清除整篇判決的所有重點
+        // 清除整篇判決的所有重點與註解
         async function clearAllHighlights() {
             if (!currentSideId || !currentUser) return;
             if (currentHighlights.length === 0) return;
-            if (!confirm("確定要清除這篇判決的所有重點嗎？")) return;
-            
+            if (!confirm("確定要清除這篇判決的所有重點與文字註解嗎？")) return;
+
             currentHighlights = [];
+            hideAnnUI();
             renderHighlights();
             await saveHighlightsToBackend();
         }
 
-        // 將目前的重點清單送回後端資料庫保存
+        // 將目前的重點與註解送回後端資料庫保存
         async function saveHighlightsToBackend() {
             if (!currentSideId || !currentUser) return;
             try {
