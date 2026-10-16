@@ -66,3 +66,23 @@ def init_user_tables():
             PRIMARY KEY (user_id, judgment_id)
         );
     """)
+
+    run_sql("""
+        -- (保留你原有的 app_users, folders 等資料表)
+        
+        CREATE TABLE IF NOT EXISTS api_logs (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES app_users(id) ON DELETE SET NULL, -- 若無登入可為 NULL
+            endpoint TEXT NOT NULL,       -- 呼叫的 API 路徑 (例如 /search)
+            method TEXT NOT NULL,         -- HTTP 方法 (GET, POST)
+            process_time FLOAT NOT NULL,  -- 處理速度 (秒)
+            status_code INTEGER NOT NULL, -- HTTP 狀態碼 (200, 500 等)
+            error_message TEXT,           -- 錯誤訊息 (若有的話)
+            created_at TIMESTAMPTZ DEFAULT now() -- 發生時間
+        );
+    """)
+def log_api_usage(user_id, endpoint, method, process_time, status_code, error_message=""):
+    run_sql("""
+        INSERT INTO api_logs (user_id, endpoint, method, process_time, status_code, error_message)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """, (user_id, endpoint, method, process_time, status_code, error_message))
