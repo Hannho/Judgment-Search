@@ -165,29 +165,50 @@
                 </div>
             </div>
 
+            
             <!-- AI 助理：預設收成圖示，點開才顯示 -->
             <div class="chat-dock">
                 <button id="chatToggleBtn" class="chat-fab" type="button" onclick="toggleChatPanel()" title="開啟 AI 智慧分析助理">🤖</button>
                 <div id="chatWrapper" style="display:none;">
-            <div class="chat-card">
-                <div class="chat-header">
-                    <h4>🤖 裁判書 AI 智慧分析助理</h4>
-                    <button class="chat-clear-btn" type="button" onclick="clearChatMessages()">清空對話</button>
-                </div>
-                <div id="chatMessages" class="chat-messages">
-                    <div class="chat-bubble-row bot">
-                        <div class="chat-avatar bot-avatar">AI</div>
-                        <div class="chat-bubble bot-bubble">
-                            你好！我是裁判書分析助理。請先在左側搜尋結果中<strong>勾選</strong>你想分析的案件，然後對我提問（例如：「這幾件詐欺案的被告大多判刑多久？」）。
+                    <div class="chat-card">
+                        <div class="chat-header">
+                            <h4>🤖 裁判書 AI 智慧分析助理</h4>
+                            <button class="chat-clear-btn" type="button" onclick="clearChatMessages()">清空對話</button>
+                        </div>
+                        
+                        <!-- 任務模式工具列 -->
+                        <div class="chat-task-toolbar">
+                            <label for="chatTaskMode" class="chat-task-label">任務模式：</label>
+                            <select id="chatTaskMode" class="chat-task-select" onchange="onTaskModeChange()">
+                                <option value="general">⚖️ 綜合判決比對（自動判定）</option>
+                                <option value="issues">🎯 訴訟爭點整理與攻防分析</option>
+                                <option value="damages">💰 損害賠償與准駁金額（民事）</option>
+                                <option value="criminal">📊 量刑趨勢與刑度考量（刑事）</option>
+                                <option value="custom">✏️ 自由自訂法務指令</option>
+                            </select>
+                        </div>
+
+                        <!-- 自由自訂指令展開區塊（預設隱藏） -->
+                        <div id="customPromptBox" class="custom-prompt-container" style="display:none;">
+                            <label for="customInstruction" class="custom-prompt-label">自訂法務指令（設定 AI 分析角度與格式）：</label>
+                            <textarea id="customInstruction" rows="2" class="custom-prompt-input" placeholder="例如：請站在智財專利律師角度，比較這幾篇判決對於進步性與均等論之認定心證，並列出關鍵證物。若有比較請以表格呈現。"></textarea>
+                        </div>
+
+                        <div id="chatMessages" class="chat-messages">
+                            <div class="chat-bubble-row bot">
+                                <div class="chat-avatar bot-avatar">AI</div>
+                                <div class="chat-bubble bot-bubble">
+                                    你好！我是裁判書分析助理。請先在左側搜尋結果中<strong>勾選</strong>你想分析的案件，選擇上方的<strong>任務模式</strong>，然後輸入問題發送。
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chat-input-area">
+                            <input type="text" id="chatInput" placeholder="請輸入對勾選案件的提問..." onkeydown="handleChatKeyDown(event)">
+                            <button id="chatSendBtn" class="chat-send-btn" onclick="sendChatMessage()">發送</button>
                         </div>
                     </div>
                 </div>
-                <div class="chat-input-area">
-                    <input type="text" id="chatInput" placeholder="請輸入對勾選案件的提問..." onkeydown="handleChatKeyDown(event)">
-                    <button id="chatSendBtn" class="chat-send-btn" onclick="sendChatMessage()">發送</button>
-                </div>
-            </div>
-        </div></div><!-- /chatWrapper /chat-dock -->
+            </div><!-- /chatWrapper /chat-dock -->
         </div>
 
     </div>

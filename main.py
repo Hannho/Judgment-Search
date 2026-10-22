@@ -62,7 +62,8 @@ async def metrics_logging_middleware(request: Request, call_next):
     status_code = 500
     
     # 嘗試從 Header 或 Token 中獲取 user_id (假設未登入為 None)
-    user_id = None 
+    raw_uid = request.headers.get("x-user-id")
+    user_id = int(raw_uid) if raw_uid and raw_uid.isdigit() else None
 
     try:
         # 讓系統繼續處理這個 API 請求

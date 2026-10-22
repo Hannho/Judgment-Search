@@ -1,23 +1,56 @@
-function isFav(id) { return Object.prototype.hasOwnProperty.call(favMap, id); }
+// static/js/user.js 最上方
+
+function isFav(id) { 
+    return !!(id && Object.prototype.hasOwnProperty.call(favMap, id)); 
+}
+
 function updateFavCount() {
     const el = document.getElementById('favCount');
     if (el) el.textContent = `(${Object.keys(favMap).length})`;
 }
+
+// 💡 修正 1：同步更新內文側邊欄中的所有星星（無論有幾個星星元件）
 function updateSideStar() {
-    const el = document.getElementById('sideFavStar');
-    if (el && currentSideId) el.textContent = isFav(currentSideId) ? '⭐' : '☆';
-}
-function refreshListStars() {
-    document.querySelectorAll('.fav-star').forEach(el => {
-        el.textContent = isFav(el.dataset.id) ? '⭐' : '☆';
+    if (!currentSideId) return;
+    const isFavorite = isFav(currentSideId);
+    const starChar = isFavorite ? '⭐' : '☆';
+    const starTitle = isFavorite ? '已收藏（點擊編輯或取消）' : '加入收藏';
+
+    // 同步更新所有有 side-fav-star 類別或 id 為 sideFavStar 的元素
+    document.querySelectorAll('#sideFavStar, .side-fav-star').forEach(el => {
+        el.textContent = starChar;
+        el.dataset.id = currentSideId;
+        el.title = starTitle;
     });
 }
-function refreshFavUI() {
-    updateFavCount();
-    updateSideStar();
-    if (isFavoritesMode) { showFavorites(); } else { refreshListStars(); }
+
+// 💡 修正 2：清單只更新「確定有帶 data-id」的星星，絕不誤傷內文區
+function refreshListStars() {
+    document.querySelectorAll('.fav-star').forEach(el => {
+        const id = el.dataset.id;
+        if (id) {
+            el.textContent = isFav(id) ? '⭐' : '☆';
+        }
+    });
 }
 
+// 💡 修正 3：先刷清單、再刷內文，雙向確保狀態一致
+function refreshFavUI() {
+    updateFavCount();
+    if (isFavoritesMode && typeof showFavorites === 'function') {
+        showFavorites();
+    } else {
+        refreshListStars();
+    }
+    updateSideStar(); // 保證內文星星最後更新，絕對不會被蓋回 ☆
+}
+
+// 💡 修正 4：新增內文星星點擊專用函式
+function toggleSideFav() {
+    if (currentSideId) {
+        toggleFav(currentSideId);
+    }
+}
 async function loadUsers(selectId) {
     try {
         const res = await fetch('/api/users');

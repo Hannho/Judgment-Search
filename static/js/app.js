@@ -525,7 +525,8 @@ async function showFullContent(id, itemOverride = null) {
 
     currentSideId = id;
     document.getElementById('sideTitle').innerHTML = `${fullTitle} <span style="color: #777; font-size: 0.75em; font-weight: normal;">(${sizeKB} KB)</span>
-        <span id="sideFavStar" style="cursor:pointer; font-size:0.9em;" onclick="openFavModal('${item.id}')" title="加入/移除我的最愛">${isFav(item.id) ? '⭐' : '☆'}</span>`;
+        <span id="sideFavStar" class="side-fav-star" style="cursor:pointer; font-size:0.9em; margin-left:8px;" onclick="toggleFav('${item.id}')" title="加入/移除我的最愛">${isFav(item.id) ? '⭐' : '☆'}</span>`;
+        
     document.getElementById('sideMeta').innerHTML = `<strong>日期：</strong>${formatROCDate(item.date)} &nbsp;|&nbsp; <strong>案由：</strong>${item.title || "無"} &nbsp;|&nbsp; <strong>大小：</strong>${sizeKB} KB`;
     
     document.getElementById('sideBody').textContent = getSideText(item);
@@ -582,6 +583,7 @@ async function showFullContent(id, itemOverride = null) {
         historyBox.innerHTML = "<span style='color:red;'>歷審爬蟲暫時無法取得資料，請確認司法院網站連線狀態。</span>";
         historyBox.style.display = "block";
     });
+    updateSideStar();
 }
 
 // 從歷審清單開啟「本地資料庫已有」的判決：向後端取單筆資料，再用同一個側邊面板顯示
