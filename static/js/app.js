@@ -507,8 +507,9 @@ function displayResults() {
     renderTableBody(judgmentsData);
 }
 
-async function showFullContent(id) {
-    const item = judgmentsData.find(j => j.id === id);
+async function showFullContent(id, itemOverride = null) {
+    // itemOverride：從歷審清單開啟「本地資料庫已有」的判決時使用（該筆不一定在目前搜尋結果裡）
+    const item = itemOverride || judgmentsData.find(j => j.id === id);
     if (!item) return;
 
     const idParts = item.id ? item.id.split(',') : [];
@@ -538,6 +539,9 @@ async function showFullContent(id) {
 
     const historyBox = document.getElementById('sideHistory');
     const loadingBox = document.getElementById('historyLoading');
+    const historyEmpty = document.getElementById('historyEmpty');
+    if (historyEmpty) historyEmpty.style.display = "none";
+    renderLaws([]);
     historyBox.style.display = "none";
     loadingBox.style.display = "block";
 
@@ -548,11 +552,23 @@ async function showFullContent(id) {
     })
     .then(res => res.json())
     .then(data => {
+        // 使用者在等待期間已切換到別筆判決，就不要覆蓋畫面
+        if (currentSideId !== id) return;
         loadingBox.style.display = "none";
+        renderLaws(data.laws);
         if (data.history && data.history.length > 0) {
             let hHtml = "<strong>🔗 相關歷審裁判紀錄：</strong><ul>";
             data.history.forEach(h => {
-                hHtml += `<li><a href="${h.url}" target="_blank">${h.title}</a></li>`;
+                const label = escapeHtml(String(h.title || h.jid || h.url || "（未命名）"));
+                if (h.in_db && h.jid) {
+                    // 本地資料庫已有：在站內側邊面板直接開啟
+                    hHtml += `<li><a href="#" data-jid="${escapeHtml(h.jid)}" onclick="openLocalHistory(this.dataset.jid); return false;">${label}</a> `
+                          +  `<span style="font-size:0.8em; color:#2e7d32; border:1px solid #a5d6a7; background:#e8f5e9; border-radius:3px; padding:0 4px;">📚 本地</span></li>`;
+                } else {
+                    // 資料庫沒有：開啟司法院外部連結
+                    hHtml += `<li><a href="${escapeHtml(h.url)}" target="_blank" rel="noopener">${label}</a> `
+                          +  `<span style="font-size:0.8em; color:#666; border:1px solid #ddd; background:#f5f5f5; border-radius:3px; padding:0 4px;">↗ 司法院</span></li>`;
+                }
             });
             historyBox.innerHTML = hHtml + "</ul>";
         } else {
@@ -561,12 +577,97 @@ async function showFullContent(id) {
         historyBox.style.display = "block";
     })
     .catch(err => {
+        if (currentSideId !== id) return;
         loadingBox.style.display = "none";
         historyBox.innerHTML = "<span style='color:red;'>歷審爬蟲暫時無法取得資料，請確認司法院網站連線狀態。</span>";
         historyBox.style.display = "block";
     });
 }
 
+// 從歷審清單開啟「本地資料庫已有」的判決：向後端取單筆資料，再用同一個側邊面板顯示
+async function openLocalHistory(jid) {
+    try {
+        const res = await fetch('/api/get_judgment', {
+            method: 'POST',
+            headers: apiHeaders(),
+            body: JSON.stringify({ id: jid })
+        });
+        if (!res.ok) throw new Error("本地資料庫查無此筆");
+        const item = await res.json();
+        if (!item || !item.id) throw new Error("資料格式錯誤");
+
+        await showFullContent(item.id, item);
+        const panel = document.getElementById('sidePanel');
+        panel.scrollTop = 0;
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (e) {
+        console.error(e);
+        alert("無法從本地資料庫開啟這筆判決：" + e.message);
+    }
+}
+
 function closeSidePanel() {
     document.getElementById('sidePanel').style.display = 'none';
+}
+
+// ==========================================
+// 右側欄：AI 助理收合 / 歷審面板重設
+// ==========================================
+
+// 點圖示開啟或收起 AI 助理
+function toggleChatPanel(forceOpen) {
+    const wrap = document.getElementById('chatWrapper');
+    const btn = document.getElementById('chatToggleBtn');
+    if (!wrap || !btn) return;
+
+    const open = (typeof forceOpen === 'boolean') ? forceOpen : (wrap.style.display === 'none');
+    wrap.style.display = open ? 'block' : 'none';
+    btn.classList.toggle('open', open);
+    btn.textContent = open ? '✖' : '🤖';
+    btn.title = open ? '收起 AI 智慧分析助理' : '開啟 AI 智慧分析助理';
+
+    if (open) {
+        const input = document.getElementById('chatInput');
+        if (input) setTimeout(() => input.focus(), 50);
+    }
+}
+
+// 關閉詳情面板（或重新搜尋）時，歷審面板回到初始提示狀態
+function resetHistoryPanel() {
+    const empty = document.getElementById('historyEmpty');
+    const loading = document.getElementById('historyLoading');
+    const box = document.getElementById('sideHistory');
+    if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+    if (loading) loading.style.display = 'none';
+    if (empty) empty.style.display = 'block';
+    renderLaws([]);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const sidePanel = document.getElementById('sidePanel');
+    if (!sidePanel) return;
+    new MutationObserver(() => {
+        if (sidePanel.style.display === 'none') resetHistoryPanel();
+    }).observe(sidePanel, { attributes: true, attributeFilter: ['style'] });
+});
+
+// 渲染「相關法條」卡片（放在歷審下面）。沒有資料就整張卡片隱藏
+function renderLaws(laws) {
+    const card = document.getElementById('lawCard');
+    const box = document.getElementById('sideLaws');
+    if (!card || !box) return;
+
+    if (!Array.isArray(laws) || laws.length === 0) {
+        card.style.display = 'none';
+        box.innerHTML = '';
+        return;
+    }
+
+    box.innerHTML = '<ul>' + laws.map(l => {
+        const text = escapeHtml(String((l && l.text) || ''));
+        return (l && l.url)
+            ? `<li><a href="${escapeHtml(l.url)}" target="_blank" rel="noopener">${text}</a></li>`
+            : `<li>${text}</li>`;
+    }).join('') + '</ul>';
+    card.style.display = 'block';
 }

@@ -425,7 +425,11 @@ body {
     flex-shrink: 0;
     position: sticky;
     top: 20px;
-    height: 85vh;
+    max-height: 85vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
 .chat-card {
@@ -797,4 +801,153 @@ mark.highlight-mark {
     content: "📝";
     font-size: 0.75em;
     margin-left: 2px;
+}
+
+/* ==========================================================================
+   9. 右側欄：歷審判決（上）＋ AI 助理收合圖示（下）
+   ========================================================================== */
+.history-card {
+    background: #fff;
+    border: 1px solid #c9d8c3;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.history-card-title {
+    background: #4a7766;
+    color: #fff;
+    font-weight: bold;
+    padding: 10px 14px;
+}
+
+.history-card-body {
+    padding: 12px 14px;
+}
+
+.history-empty {
+    color: #888;
+    font-size: 0.9em;
+    line-height: 1.6;
+}
+
+.history-card .history-box {
+    margin: 0;
+    padding: 0;
+    background: none;
+    border-left: none;
+    max-height: 30vh;
+    overflow-y: auto;
+}
+
+.history-card .history-box > strong {
+    display: none;            /* 卡片標題已經寫了「歷審判決」，不重複 */
+}
+
+.history-card .history-box ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.history-card .history-box li {
+    margin: 0 0 8px 0;
+    padding: 8px 10px;
+    background: #f7faf6;
+    border: 1px solid #e1ebdc;
+    border-radius: 6px;
+    line-height: 1.5;
+}
+
+.history-card .history-box li a {
+    color: #1a4fa0;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.history-card .history-box li a:hover {
+    text-decoration: underline;
+}
+
+.history-card .history-loading {
+    margin: 0;
+    font-size: 0.92em;
+}
+
+.law-list ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.law-list li {
+    margin: 0 0 8px 0;
+    padding: 8px 10px;
+    background: #f7faf6;
+    border: 1px solid #e1ebdc;
+    border-radius: 6px;
+    line-height: 1.5;
+    font-size: 0.95em;
+    color: #333;
+}
+
+.law-list li a {
+    color: #1a4fa0;
+    text-decoration: none;
+}
+
+.law-list li a:hover {
+    text-decoration: underline;
+}
+
+.chat-dock {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+}
+
+.chat-fab {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    font-size: 28px;
+    line-height: 56px;
+    padding: 0;
+    text-align: center;
+    background: linear-gradient(135deg, #1976d2, #1565c0);
+    color: #fff;
+    box-shadow: 0 3px 10px rgba(21, 101, 192, 0.4);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.chat-fab:hover {
+    transform: scale(1.08);
+    box-shadow: 0 4px 14px rgba(21, 101, 192, 0.55);
+}
+
+.chat-fab.open {
+    background: #757575;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    font-size: 22px;
+}
+
+#chatWrapper {
+    width: 100%;
+}
+
+/* 展開後：聊天卡片固定高度，訊息區自己捲動 */
+#chatWrapper .chat-card {
+    display: flex;
+    flex-direction: column;
+    height: 50vh;
+    min-height: 320px;
+}
+
+#chatWrapper .chat-messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
 }

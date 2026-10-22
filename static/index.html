@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>裁判書搜尋與歷審查詢系統</title>
     <!-- 載入外部 CSS -->
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=3">
     <link rel="icon" type="image/png" href="/static/favicon.png">
 </head>
 <body>
@@ -137,11 +137,6 @@
                     
                     <h3 id="sideTitle" style="color: #0000cc; margin-top: 0; padding-right: 35px;"></h3>
                     <div id="sideMeta" style="color: #666; font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 10px;"></div>
-                    
-                    <div id="historyLoading" class="history-loading">
-                        ⏳ 正在啟動背景爬蟲，即時抓取歷審紀錄，請稍候約 5-10 秒...
-                    </div>
-                    <div id="sideHistory" class="history-box" style="display: none;"></div>
 
                     <div id="sideBody" style="white-space: pre-wrap; font-size: 1.05em; line-height: 1.8; color: #222; margin-top: 15px;"></div>
                 </div>
@@ -150,6 +145,30 @@
 
         <!-- 右側：🤖 AI 智慧分析助理側邊欄 -->
         <div class="ai-sidebar">
+            <!-- 歷審判決（放在 AI 聊天上方） -->
+            <div id="historyCard" class="history-card">
+                <div class="history-card-title">⚖️ 歷審判決</div>
+                <div class="history-card-body">
+                    <div id="historyEmpty" class="history-empty">點選左側任一筆判決，這裡會顯示它的歷審紀錄。</div>
+                    <div id="historyLoading" class="history-loading" style="display:none;">
+                        ⏳ 正在抓取歷審紀錄，請稍候約 5-10 秒...
+                    </div>
+                    <div id="sideHistory" class="history-box" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- 相關法條（放在歷審下面；有資料才顯示） -->
+            <div id="lawCard" class="history-card" style="display:none;">
+                <div class="history-card-title">📖 相關法條</div>
+                <div class="history-card-body">
+                    <div id="sideLaws" class="law-list"></div>
+                </div>
+            </div>
+
+            <!-- AI 助理：預設收成圖示，點開才顯示 -->
+            <div class="chat-dock">
+                <button id="chatToggleBtn" class="chat-fab" type="button" onclick="toggleChatPanel()" title="開啟 AI 智慧分析助理">🤖</button>
+                <div id="chatWrapper" style="display:none;">
             <div class="chat-card">
                 <div class="chat-header">
                     <h4>🤖 裁判書 AI 智慧分析助理</h4>
@@ -168,6 +187,7 @@
                     <button id="chatSendBtn" class="chat-send-btn" onclick="sendChatMessage()">發送</button>
                 </div>
             </div>
+        </div></div><!-- /chatWrapper /chat-dock -->
         </div>
 
     </div>
@@ -225,7 +245,7 @@
     <!-- 依序載入模組化 JS 檔案 -->
     <script src="/static/js/globals.js"></script>
     <script src="/static/js/user.js"></script>
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=3"></script>
     <script src="/static/js/highlight.js"></script>
     <script src="/static/js/chat.js"></script>
 </body>

@@ -109,16 +109,23 @@ const courtMapping = {
 
 function getCourtName(item) {
     if (!item) return "未知法院";
-    const content = item.content || "";
-    const firstLine = content.split('\n')[0] || "";
-    const matchCourt = firstLine.match(/([^\s]+(?:法院|法庭))/);
-    if (matchCourt && matchCourt[1]) return matchCourt[1].trim();
 
     const id = item.id || "";
     const firstSegment = id.split(',')[0] || "";
     const prefix3 = firstSegment.substring(0, 3);
-    if (courtMapping[prefix3]) return courtMapping[prefix3];
+    
+    // 1. 優先依賴最準確的 ID 代碼對照表
     if (courtMapping[firstSegment]) return courtMapping[firstSegment];
+    if (courtMapping[prefix3]) return courtMapping[prefix3];
+
+    // 2. 如果 ID 對照不到，再退回從內文第一行擷取
+    const content = item.content || "";
+    const firstLine = content.split('\n')[0] || "";
+    
+    // 修正 Regex：容許「法院」後面可以跟著空格與「分院」或「簡易庭」
+    const matchCourt = firstLine.match(/([^\s]+(?:法院|法庭)(?:\s*[^\s]+(?:分院|簡易庭))?)/);
+    if (matchCourt && matchCourt[1]) return matchCourt[1].trim();
+
     return prefix3 || "未知法院";
 }
 
