@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>裁判書搜尋與歷審查詢系統</title>
     <!-- 載入外部 CSS -->
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=3">
     <link rel="icon" type="image/png" href="/static/favicon.png">
 </head>
 <body>
@@ -137,11 +137,6 @@
                     
                     <h3 id="sideTitle" style="color: #0000cc; margin-top: 0; padding-right: 35px;"></h3>
                     <div id="sideMeta" style="color: #666; font-size: 0.9em; border-bottom: 1px solid #eee; padding-bottom: 10px;"></div>
-                    
-                    <div id="historyLoading" class="history-loading">
-                        ⏳ 正在啟動背景爬蟲，即時抓取歷審紀錄，請稍候約 5-10 秒...
-                    </div>
-                    <div id="sideHistory" class="history-box" style="display: none;"></div>
 
                     <div id="sideBody" style="white-space: pre-wrap; font-size: 1.05em; line-height: 1.8; color: #222; margin-top: 15px;"></div>
                 </div>
@@ -150,24 +145,70 @@
 
         <!-- 右側：🤖 AI 智慧分析助理側邊欄 -->
         <div class="ai-sidebar">
-            <div class="chat-card">
-                <div class="chat-header">
-                    <h4>🤖 裁判書 AI 智慧分析助理</h4>
-                    <button class="chat-clear-btn" type="button" onclick="clearChatMessages()">清空對話</button>
+            <!-- 歷審判決（放在 AI 聊天上方） -->
+            <div id="historyCard" class="history-card">
+                <div class="history-card-title">⚖️ 歷審判決</div>
+                <div class="history-card-body">
+                    <div id="historyEmpty" class="history-empty">點選左側任一筆判決，這裡會顯示它的歷審紀錄。</div>
+                    <div id="historyLoading" class="history-loading" style="display:none;">
+                        ⏳ 正在抓取歷審紀錄，請稍候約 5-10 秒...
+                    </div>
+                    <div id="sideHistory" class="history-box" style="display: none;"></div>
                 </div>
-                <div id="chatMessages" class="chat-messages">
-                    <div class="chat-bubble-row bot">
-                        <div class="chat-avatar bot-avatar">AI</div>
-                        <div class="chat-bubble bot-bubble">
-                            你好！我是裁判書分析助理。請先在左側搜尋結果中<strong>勾選</strong>你想分析的案件，然後對我提問（例如：「這幾件詐欺案的被告大多判刑多久？」）。
+            </div>
+
+            <!-- 相關法條（放在歷審下面；有資料才顯示） -->
+            <div id="lawCard" class="history-card" style="display:none;">
+                <div class="history-card-title">📖 相關法條</div>
+                <div class="history-card-body">
+                    <div id="sideLaws" class="law-list"></div>
+                </div>
+            </div>
+
+            
+            <!-- AI 助理：預設收成圖示，點開才顯示 -->
+            <div class="chat-dock">
+                <button id="chatToggleBtn" class="chat-fab" type="button" onclick="toggleChatPanel()" title="開啟 AI 智慧分析助理">🤖</button>
+                <div id="chatWrapper" style="display:none;">
+                    <div class="chat-card">
+                        <div class="chat-header">
+                            <h4>🤖 裁判書 AI 智慧分析助理</h4>
+                            <button class="chat-clear-btn" type="button" onclick="clearChatMessages()">清空對話</button>
+                        </div>
+                        
+                        <!-- 任務模式工具列 -->
+                        <div class="chat-task-toolbar">
+                            <label for="chatTaskMode" class="chat-task-label">任務模式：</label>
+                            <select id="chatTaskMode" class="chat-task-select" onchange="onTaskModeChange()">
+                                <option value="general">⚖️ 綜合判決比對（自動判定）</option>
+                                <option value="issues">🎯 訴訟爭點整理與攻防分析</option>
+                                <option value="damages">💰 損害賠償與准駁金額（民事）</option>
+                                <option value="criminal">📊 量刑趨勢與刑度考量（刑事）</option>
+                                <option value="custom">✏️ 自由自訂法務指令</option>
+                            </select>
+                        </div>
+
+                        <!-- 自由自訂指令展開區塊（預設隱藏） -->
+                        <div id="customPromptBox" class="custom-prompt-container" style="display:none;">
+                            <label for="customInstruction" class="custom-prompt-label">自訂法務指令（設定 AI 分析角度與格式）：</label>
+                            <textarea id="customInstruction" rows="2" class="custom-prompt-input" placeholder="例如：請站在智財專利律師角度，比較這幾篇判決對於進步性與均等論之認定心證，並列出關鍵證物。若有比較請以表格呈現。"></textarea>
+                        </div>
+
+                        <div id="chatMessages" class="chat-messages">
+                            <div class="chat-bubble-row bot">
+                                <div class="chat-avatar bot-avatar">AI</div>
+                                <div class="chat-bubble bot-bubble">
+                                    你好！我是裁判書分析助理。請先在左側搜尋結果中<strong>勾選</strong>你想分析的案件，選擇上方的<strong>任務模式</strong>，然後輸入問題發送。
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chat-input-area">
+                            <input type="text" id="chatInput" placeholder="請輸入對勾選案件的提問..." onkeydown="handleChatKeyDown(event)">
+                            <button id="chatSendBtn" class="chat-send-btn" onclick="sendChatMessage()">發送</button>
                         </div>
                     </div>
                 </div>
-                <div class="chat-input-area">
-                    <input type="text" id="chatInput" placeholder="請輸入對勾選案件的提問..." onkeydown="handleChatKeyDown(event)">
-                    <button id="chatSendBtn" class="chat-send-btn" onclick="sendChatMessage()">發送</button>
-                </div>
-            </div>
+            </div><!-- /chatWrapper /chat-dock -->
         </div>
 
     </div>
@@ -225,7 +266,7 @@
     <!-- 依序載入模組化 JS 檔案 -->
     <script src="/static/js/globals.js"></script>
     <script src="/static/js/user.js"></script>
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=3"></script>
     <script src="/static/js/highlight.js"></script>
     <script src="/static/js/chat.js"></script>
 </body>
