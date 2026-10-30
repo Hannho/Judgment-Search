@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_community.chat_models import ChatLlamaCpp
 
 router = APIRouter()
 
@@ -14,8 +15,17 @@ class MultiQAQuery(BaseModel):
     task_mode: Optional[str] = "general"        # general, issues, damages, criminal, custom
     custom_instruction: Optional[str] = ""     # 使用者自訂的高級提示詞
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 
+# 修正後程式碼
+MODEL_PATH = r"C:\Users\nuc\Desktop\Local LLM\qwen1_5-4b-chat-q4_k_m.gguf"
+#OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+llm = ChatLlamaCpp(
+    model_path=MODEL_PATH,
+    temperature=0.1,
+    n_ctx=8192,      # 根據你的模型支援與系統記憶體調整上下文長度 (Map-Reduce 建議至少 4096)
+    max_tokens=1024,
+    n_gpu_layers=-1  # 限制回覆的最大長度
+)
 # ==========================================
 # 案件分類 Prompt（保留原版）
 # ==========================================
@@ -219,11 +229,6 @@ async def ask_ai_multiple(query: MultiQAQuery):
         return {"answer": "目前沒有任何案件資料可供閱讀。"}
 
     try:
-        llm = ChatOllama(
-            model="taide-law",
-            base_url=OLLAMA_BASE_URL,
-            temperature=0.1
-        )
 
         valid_cases = [c.strip() for c in query.judgments_content if c and c.strip()][:10]
         if not valid_cases:
