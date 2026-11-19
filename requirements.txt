@@ -8,3 +8,5 @@ langchain-core
 langchain-ollama
 DBUtils==3.0.3
 psycopg2-binary
+langchain_community
+llama-cpp-python

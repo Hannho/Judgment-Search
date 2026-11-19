@@ -1,23 +1,171 @@
 /* ==========================================================================
+   0. 設計系統主題變數 (現代法務湛藍 Modern Legal Slate Blue)
+   ========================================================================== */
+:root {
+    --bg-page: #f8fafc;
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+    --text-light: #94a3b8;
+    --card-bg: #ffffff;
+    --card-border: #e2e8f0;
+    --card-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.06);
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --primary-text: #ffffff;
+    --primary-light: #eff6ff;
+    --primary-border: #bfdbfe;
+    --btn-toggle-bg: #ffffff;
+    --btn-toggle-text: #334155;
+    --btn-toggle-border: #cbd5e1;
+    --btn-toggle-hover: #f1f5f9;
+    --search-box-bg: #ffffff;
+    --search-box-border: #cbd5e1;
+    --search-box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.06);
+    --adv-bg: #f8fafc;
+    --adv-border: #e2e8f0;
+    --adv-label-bg: #f1f5f9;
+    --adv-label-text: #1e293b;
+    --table-header-bg: #1e293b;
+    --table-header-text: #ffffff;
+    --table-row-hover: #f8fafc;
+    --detail-panel-bg: #ffffff;
+    --detail-panel-border: #cbd5e1;
+    --detail-panel-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.1);
+    --header-bg: #0f172a;
+    --header-text: #ffffff;
+    --accent: #0ea5e9;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+}
+
+/* ==========================================================================
    1. 基礎樣式 (Base)
    ========================================================================== */
 body {
-    font-family: "微軟正黑體", Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "微軟正黑體", "Microsoft JhengHei", Arial, sans-serif;
+    background-color: var(--bg-page);
+    color: var(--text-main);
     max-width: 96%;
-    margin: 20px auto;
+    margin: 15px auto 40px auto;
     line-height: 1.6;
-    color: #333;
+    transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* 現代頂部導航列 (Modern Top App Bar) */
+.app-top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 14px 22px;
+    background: var(--header-bg);
+    color: var(--header-text);
+    border-radius: var(--radius-lg);
+    margin-bottom: 20px;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.15);
+}
+
+.brand-group {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.brand-icon {
+    font-size: 2.1em;
+    line-height: 1;
+}
+
+.brand-title {
+    margin: 0;
+    font-size: 1.4em;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.brand-badge {
+    font-size: 0.55em;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.16);
+    letter-spacing: 0.5px;
+}
+
+.brand-subtitle {
+    margin: 2px 0 0 0;
+    font-size: 0.82em;
+    opacity: 0.82;
+}
+
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.user-capsule {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.12);
+    padding: 4px 10px;
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.user-capsule-icon {
+    font-size: 1.1em;
+}
+
+.user-capsule-select {
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.95);
+    color: #1e293b;
+    font-size: 0.85em;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.user-capsule-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.user-action-btn {
+    padding: 3px 6px;
+    background: rgba(255, 255, 255, 0.18);
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: #fff;
+    font-size: 0.85em;
+    transition: background 0.2s;
+}
+
+.user-action-btn:hover {
+    background: rgba(255, 255, 255, 0.35);
 }
 
 /* ==========================================================================
    2. 搜尋條件與進階面板 (Search & Filter)
    ========================================================================== */
 .search-box {
-    background: #eef2eb;
-    padding: 18px 20px;
-    border-radius: 8px;
-    margin-bottom: 20px;
-    border: 1px solid #d0dcae;
+    background: var(--search-box-bg);
+    padding: 20px 24px;
+    border-radius: var(--radius-lg);
+    margin-bottom: 24px;
+    border: 1px solid var(--search-box-border);
+    box-shadow: var(--search-box-shadow);
+    transition: all 0.25s ease;
 }
 
 .basic-search-row {
@@ -29,77 +177,94 @@ body {
 
 .basic-search-row input,
 .basic-search-row select {
-    padding: 8px 10px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    padding: 9px 12px;
+    border: 1px solid var(--btn-toggle-border);
+    border-radius: var(--radius-md);
     box-sizing: border-box;
+    background: var(--card-bg);
+    color: var(--text-main);
+    font-size: 0.92em;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.basic-search-row input:focus,
+.basic-search-row select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-light);
 }
 
 /* 按鈕樣式 */
 .btn-primary {
-    padding: 8px 22px;
-    background: #4a7766;
-    color: white;
+    padding: 9px 24px;
+    background: var(--primary);
+    color: var(--primary-text);
     border: none;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     font-weight: bold;
-    transition: background 0.2s;
+    font-size: 0.92em;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    transition: background 0.2s, transform 0.1s;
 }
 
 .btn-primary:hover {
-    background: #365b4d;
+    background: var(--primary-hover);
+    transform: translateY(-1px);
 }
 
 .btn-toggle {
     padding: 8px 16px;
-    background: #fff;
-    color: #4a7766;
-    border: 1px solid #4a7766;
+    background: var(--btn-toggle-bg);
+    color: var(--btn-toggle-text);
+    border: 1px solid var(--btn-toggle-border);
     cursor: pointer;
-    border-radius: 4px;
-    font-weight: bold;
-    transition: background 0.2s;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    font-size: 0.88em;
+    transition: background 0.2s, border-color 0.2s;
 }
 
 .btn-toggle:hover {
-    background: #f0f5f2;
+    background: var(--btn-toggle-hover);
 }
 
 .btn-reset {
     padding: 8px 14px;
-    background: #888;
+    background: #64748b;
     color: white;
     border: none;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
+    font-weight: 500;
     transition: background 0.2s;
 }
 
 .btn-reset:hover {
-    background: #666;
+    background: #475569;
 }
 
 .btn-secondary {
     padding: 8px 15px;
-    border: 1px solid #ccc;
-    background: #f9f9f9;
-    border-radius: 4px;
+    border: 1px solid var(--btn-toggle-border);
+    background: var(--btn-toggle-bg);
+    color: var(--text-main);
+    border-radius: var(--radius-md);
     cursor: pointer;
     transition: background 0.2s;
 }
 
 .btn-secondary:hover {
-    background: #eef0f2;
+    background: var(--btn-toggle-hover);
 }
 
 /* 錯誤提示條 */
 .alert-error {
-    background: #ffebee;
-    color: #c62828;
-    border: 1px solid #ef9a9a;
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
     padding: 10px 15px;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
     margin-top: 12px;
     display: none;
     font-size: 0.9em;
@@ -109,30 +274,34 @@ body {
 /* 司法院風格進階搜尋表格 */
 .advanced-panel {
     margin-top: 15px;
-    border-top: 1px dashed #b5c7ad;
+    border-top: 1px dashed var(--adv-border);
     padding-top: 15px;
 }
 
 .adv-table {
     width: 100%;
     border-collapse: collapse;
-    background: #fbfdfa;
-    border: 1px solid #c9d8c3;
+    background: var(--adv-bg);
+    border: 1px solid var(--adv-border);
     font-size: 0.92em;
+    border-radius: var(--radius-md);
+    overflow: hidden;
 }
 
 .adv-table td {
-    padding: 8px 12px;
-    border-bottom: 1px solid #dce7d7;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--adv-border);
     vertical-align: middle;
 }
 
 .adv-label {
-    width: 110px;
-    background-color: #dbe6d5;
-    font-weight: bold;
-    color: #2e4d3f;
+    width: 120px;
+    background-color: var(--adv-label-bg);
+    font-weight: 600;
+    color: var(--adv-label-text);
     text-align: center;
+    border-right: 1px solid var(--adv-border);
+}
     border-right: 1px solid #c9d8c3;
 }
 
@@ -189,27 +358,29 @@ body {
     margin-bottom: 12px;
     background: #fff;
     border-radius: 6px;
-    border: 1px solid #c8e6c9;
+    border: 1px solid var(--border-color);
 }
 
 .facet-header {
-    background: #f1f8e9;
+    background: #f8fafc;
+    color: var(--text-dark);
     padding: 10px;
-    font-weight: bold;
-    font-size: 1.05em;
+    font-weight: 600;
+    font-size: 0.95em;
     cursor: pointer;
     display: flex;
     align-items: center;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .facet-header::before {
-    content: '➖';
+    content: '▾';
     margin-right: 8px;
-    font-size: 0.8em;
+    font-size: 0.9em;
 }
 
 .facet-header.collapsed::before {
-    content: '➕';
+    content: '▸';
 }
 
 .facet-list {
@@ -275,36 +446,47 @@ body {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.95em;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: var(--card-shadow);
 }
 
 .result-table th,
 .result-table td {
-    border-bottom: 1px solid #ddd;
-    padding: 12px;
+    border-bottom: 1px solid var(--card-border);
+    padding: 12px 14px;
     text-align: left;
     vertical-align: top;
+    color: var(--text-main);
+}
+
+.result-table tr:hover td {
+    background-color: var(--table-row-hover);
 }
 
 .result-table th {
-    background-color: #4a7766;
-    color: white;
-    font-weight: normal;
+    background-color: var(--table-header-bg);
+    color: var(--table-header-text);
+    font-weight: 600;
     position: sticky;
     top: 0;
     z-index: 10;
 }
 
 .result-title-link {
-    color: #0000cc;
+    color: var(--primary);
     text-decoration: none;
     cursor: pointer;
     font-weight: bold;
     font-size: 1.05em;
+    transition: color 0.15s;
 }
 
 .result-title-link:hover {
     text-decoration: underline;
-    color: #cc0000;
+    color: var(--primary-hover);
 }
 
 .snippet {
@@ -361,16 +543,26 @@ body {
    ========================================================================== */
 .detail-panel {
     flex: 1;
-    background: #fdfdfd;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 20px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    background: var(--detail-panel-bg);
+    border: 1px solid var(--detail-panel-border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    box-shadow: var(--detail-panel-shadow);
     display: none;
     position: sticky;
     top: 20px;
-    max-height: 80vh;
+    max-height: 85vh;
     overflow-y: auto;
+    color: var(--text-main);
+}
+
+.side-judgment-body {
+    white-space: pre-wrap;
+    font-size: 1.05em;
+    line-height: 1.85;
+    color: var(--text-main);
+    margin-top: 12px;
+    letter-spacing: 0.2px;
 }
 
 .close-panel-btn {
@@ -421,11 +613,11 @@ body {
    6. AI 智慧分析助理 (AI Sidebar)
    ========================================================================== */
 .ai-sidebar {
-    width: 340px;
+    width: 365px;
     flex-shrink: 0;
     position: sticky;
     top: 20px;
-    max-height: 85vh;
+    max-height: 88vh;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -443,7 +635,7 @@ body {
 .chat-header {
     background: linear-gradient(135deg, #1976d2, #1565c0);
     color: #ffffff;
-    padding: 12px 18px;
+    padding: 10px 14px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -451,7 +643,7 @@ body {
 
 .chat-header h4 {
     margin: 0;
-    font-size: 1.05em;
+    font-size: 1.02em;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -461,14 +653,33 @@ body {
     background: rgba(255, 255, 255, 0.2);
     border: 1px solid rgba(255, 255, 255, 0.4);
     color: #fff;
-    padding: 4px 10px;
+    padding: 3px 8px;
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.8em;
+    transition: background 0.15s ease;
 }
 
 .chat-clear-btn:hover {
     background: rgba(255, 255, 255, 0.35);
+}
+
+.chat-close-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85em;
+    line-height: 1;
+    transition: all 0.15s ease;
+}
+
+.chat-close-btn:hover {
+    background: rgba(239, 68, 68, 0.8);
+    border-color: rgba(239, 68, 68, 1);
+    color: #ffffff;
 }
 
 .chat-messages {
@@ -618,6 +829,155 @@ body {
     width: 400px;
     max-width: 90%;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.history-preview-dialog {
+    width: 680px;
+    max-width: 92%;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    border: 1px solid #cbd5e1;
+    animation: modalFadeIn 0.2s ease;
+}
+
+/* ==========================================================================
+   雙案/歷審並列對照視窗 (Side-by-Side Diff Modal)
+   ========================================================================== */
+.compare-dialog {
+    width: 95vw;
+    max-width: 1400px;
+    height: 90vh;
+    display: flex;
+    flex-direction: column;
+    padding: 18px 24px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    animation: modalFadeIn 0.2s ease;
+}
+
+.compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+    margin-top: 14px;
+}
+
+.compare-col {
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 14px;
+    overflow-y: auto;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.compare-col-header {
+    border-bottom: 2px solid #e2e8f0;
+    padding-bottom: 10px;
+    margin-bottom: 8px;
+}
+
+.compare-col-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.78em;
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+.compare-col-badge.badge-a { background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+.compare-col-badge.badge-b { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+
+.compare-col-title {
+    margin: 4px 0;
+    font-size: 1.05em;
+    color: #1e3a8a;
+    line-height: 1.4;
+}
+
+.compare-col-meta {
+    font-size: 0.85em;
+    color: #64748b;
+    margin-bottom: 4px;
+}
+
+.compare-col-judges {
+    margin-top: 4px;
+}
+
+.compare-section-label {
+    font-weight: bold;
+    font-size: 0.9em;
+    color: #1e40af;
+    margin: 10px 0 4px 0;
+}
+
+.compare-main-text {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 0.92em;
+    line-height: 1.6;
+    color: #0f172a;
+    white-space: pre-wrap;
+    max-height: 140px;
+    overflow-y: auto;
+}
+
+.compare-body {
+    white-space: pre-wrap;
+    line-height: 1.75;
+    font-size: 0.92em;
+    color: #334155;
+    flex: 1;
+    background: #fafafa;
+    border: 1px solid #f1f5f9;
+    border-radius: 6px;
+    padding: 12px;
+    overflow-y: auto;
+}
+
+/* 實體辨識高亮樣式 */
+mark.entity-amount {
+    background-color: #fef08a !important;
+    color: #854d0e !important;
+    padding: 1px 3px;
+    border-radius: 3px;
+    font-weight: 600;
+    border-bottom: 1px dashed #ca8a04;
+}
+
+mark.entity-date {
+    background-color: #dbeafe !important;
+    color: #1e40af !important;
+    padding: 1px 3px;
+    border-radius: 3px;
+    font-weight: 500;
+    border-bottom: 1px dashed #3b82f6;
+}
+
+mark.entity-lawyer {
+    background-color: #dcfce7 !important;
+    color: #166534 !important;
+    padding: 1px 3px;
+    border-radius: 3px;
+    font-weight: 600;
+    border-bottom: 1px dashed #22c55e;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: translateY(-10px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .modal-header {
@@ -794,13 +1154,14 @@ mark.highlight-mark {
 }
 
 .ann-note {
-    border-bottom: 2px dashed #e65100;
+    border-bottom: 2px dashed #2563eb;
 }
 
 .ann-note-end::after {
-    content: "📝";
-    font-size: 0.75em;
+    content: "✎";
+    font-size: 0.8em;
     margin-left: 2px;
+    color: #2563eb;
 }
 
 /* ==========================================================================
@@ -808,17 +1169,37 @@ mark.highlight-mark {
    ========================================================================== */
 .history-card {
     background: #fff;
-    border: 1px solid #c9d8c3;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .history-card-title {
-    background: #4a7766;
-    color: #fff;
-    font-weight: bold;
+    background: #1e293b;
+    color: #f8fafc;
+    font-weight: 600;
     padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #334155;
+}
+
+.title-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #2563eb;
+    color: #ffffff;
+    font-size: 0.78em;
+    font-weight: bold;
+    min-width: 19px;
+    height: 19px;
+    padding: 0 5px;
+    border-radius: 10px;
+    margin-left: 6px;
+    line-height: 1;
+    box-sizing: border-box;
 }
 
 .history-card-body {
@@ -833,11 +1214,34 @@ mark.highlight-mark {
 
 .history-card .history-box {
     margin: 0;
-    padding: 0;
+    padding: 2px 2px 2px 0;
     background: none;
     border-left: none;
-    max-height: 30vh;
+    max-height: 350px;
     overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.history-card .history-box::-webkit-scrollbar,
+.law-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.history-card .history-box::-webkit-scrollbar-track,
+.law-list::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+.history-card .history-box::-webkit-scrollbar-thumb,
+.law-list::-webkit-scrollbar-thumb {
+    background: #b0bec5;
+    border-radius: 3px;
+}
+
+.history-card .history-box::-webkit-scrollbar-thumb:hover,
+.law-list::-webkit-scrollbar-thumb:hover {
+    background: #4a7766;
 }
 
 .history-card .history-box > strong {
@@ -869,9 +1273,300 @@ mark.highlight-mark {
     text-decoration: underline;
 }
 
+/* ==========================================================================
+   合議庭成員 / 承審法官標籤
+   ========================================================================== */
+.judge-badge-box {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.judge-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    color: #1e40af;
+    padding: 3px 9px;
+    border-radius: 14px;
+    font-size: 0.88em;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+}
+
+.judge-pill:hover {
+    background: #1e40af;
+    color: #ffffff;
+    border-color: #1e40af;
+    box-shadow: 0 2px 4px rgba(30, 64, 175, 0.2);
+}
+
+.judge-pill-group {
+    display: inline-flex;
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 16px;
+    overflow: hidden;
+    font-size: 0.86em;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.judge-pill-name {
+    padding: 3px 8px 3px 10px;
+    color: #1e40af;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.judge-pill-name:hover {
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.judge-pill-stats-btn {
+    padding: 3px 8px;
+    background: #f1f5f9;
+    border: none;
+    border-left: 1px solid #cbd5e1;
+    color: #334155;
+    font-size: 0.8em;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.15s;
+}
+.judge-pill-stats-btn:hover {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+.judge-pill small {
+    color: #64748b;
+    font-weight: normal;
+}
+
+.judge-pill:hover small {
+    color: #eff6ff;
+}
+
+/* ==========================================================================
+   歷審脈絡時序圖 (Judicial Timeline)
+   ========================================================================== */
+.history-timeline {
+    position: relative;
+    padding-left: 20px;
+    margin: 8px 0;
+}
+
+.history-timeline::before {
+    content: '';
+    position: absolute;
+    top: 10px;
+    bottom: 10px;
+    left: 6px;
+    width: 2px;
+    background: #cbd5e1;
+}
+
+.timeline-item {
+    position: relative;
+    margin-bottom: 10px;
+}
+
+.timeline-item:last-child {
+    margin-bottom: 0;
+}
+
+.timeline-dot {
+    position: absolute;
+    left: -20px;
+    top: 8px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #2563eb;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px #93c5fd;
+    z-index: 1;
+}
+
+.timeline-dot.tier-1 { background: #2563eb; }
+.timeline-dot.tier-2 { background: #0284c7; }
+.timeline-dot.tier-3 { background: #4f46e5; }
+.timeline-dot.is-current { background: #059669; box-shadow: 0 0 0 2px #34d399; }
+
+.timeline-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 0.9em;
+    line-height: 1.45;
+}
+
+.timeline-card.is-current {
+    background: #f0fdf4;
+    border-color: #86efac;
+}
+
+.timeline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 3px;
+}
+
+.timeline-tier-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.76em;
+    font-weight: bold;
+    color: #fff;
+}
+
+.timeline-tier-badge.tier-1 { background: #2e7d32; }
+.timeline-tier-badge.tier-2 { background: #1565c0; }
+.timeline-tier-badge.tier-3 { background: #6a1b9a; }
+
+/* 歷審動作按鈕工具列與徽章 (確保中文字永不縱向折字，保持橫向工整) */
+.timeline-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 6px;
+}
+
+.timeline-actions button,
+.timeline-actions .btn-toggle,
+.timeline-actions span {
+    white-space: nowrap !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.35;
+}
+
+.timeline-btn-preview {
+    font-size: 0.76em !important;
+    padding: 2px 6px !important;
+    background: #eff6ff !important;
+    color: #1d4ed8 !important;
+    border: 1px solid #bfdbfe !important;
+    border-radius: 4px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.timeline-btn-preview:hover {
+    background: #dbeafe !important;
+    border-color: #93c5fd !important;
+}
+
+.timeline-btn-compare {
+    font-size: 0.76em !important;
+    padding: 2px 6px !important;
+    background: #e0e7ff !important;
+    color: #3730a3 !important;
+    border: 1px solid #c7d2fe !important;
+    border-radius: 4px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.timeline-btn-compare:hover {
+    background: #c7d2fe !important;
+    border-color: #a5b4fc !important;
+}
+
+.timeline-btn-full {
+    font-size: 0.76em !important;
+    padding: 2px 6px !important;
+    background: #f8fafc !important;
+    color: #334155 !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 4px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.timeline-btn-full:hover {
+    background: #e2e8f0 !important;
+    border-color: #94a3b8 !important;
+}
+
+.timeline-badge-local {
+    font-size: 0.74em !important;
+    color: #166534 !important;
+    border: 1px solid #bbf7d0 !important;
+    background: #f0fdf4 !important;
+    border-radius: 4px;
+    padding: 2px 6px !important;
+    font-weight: 500;
+}
+
+.timeline-badge-current {
+    font-size: 0.74em !important;
+    color: #15803d !important;
+    border: 1px solid #86efac !important;
+    background: #dcfce7 !important;
+    border-radius: 4px;
+    padding: 2px 6px !important;
+    font-weight: bold;
+}
+
+.timeline-badge-remote {
+    font-size: 0.74em !important;
+    color: #475569 !important;
+    border: 1px solid #cbd5e1 !important;
+    background: #f1f5f9 !important;
+    border-radius: 4px;
+    padding: 2px 6px !important;
+}
+
+.citation-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    margin: 0 2px;
+    background: #e3f2fd;
+    color: #1565c0;
+    border: 1px solid #90caf9;
+    border-radius: 4px;
+    font-size: 0.85em;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.citation-badge:hover {
+    background: #1565c0;
+    color: #ffffff;
+}
+
 .history-card .history-loading {
     margin: 0;
     font-size: 0.92em;
+}
+
+.law-list {
+    max-height: 260px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .law-list ul {
@@ -1064,4 +1759,218 @@ mark.highlight-mark {
     margin: 10px 0 6px 0;
     color: #1e3a8a;
     font-weight: 700;
+}
+
+/* ==========================================================================
+   10. 法官心證畫像 (Judge Analytics)、引用網絡 (Citation Graph) 與 判賠行情 (Compensation)
+   ========================================================================== */
+.judge-analytics-dialog {
+    width: 820px;
+    max-width: 95%;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 18px 22px;
+    animation: modalFadeIn 0.2s ease;
+}
+
+.citation-graph-dialog {
+    width: 96vw;
+    max-width: 1350px;
+    height: 88vh;
+    display: flex;
+    flex-direction: column;
+    padding: 16px 20px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    animation: modalFadeIn 0.2s ease;
+}
+
+.citation-graph-grid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+    margin-top: 12px;
+}
+
+.citation-canvas-container {
+    position: relative;
+    background: #0f172a;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+#citationCanvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: grab;
+}
+#citationCanvas:active {
+    cursor: grabbing;
+}
+
+.citation-canvas-legend {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    display: flex;
+    gap: 12px;
+    background: rgba(15, 23, 42, 0.88);
+    backdrop-filter: blur(6px);
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 0.78em;
+    color: #e2e8f0;
+    flex-wrap: wrap;
+    z-index: 10;
+}
+
+.leg-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.leg-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+.dot-center { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
+.dot-const { background: #ef4444; }
+.dot-supreme { background: #8b5cf6; }
+.dot-history { background: #3b82f6; }
+.dot-law { background: #10b981; }
+
+.citation-detail-sidebar {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 14px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.cite-group-title {
+    font-weight: bold;
+    font-size: 0.9em;
+    color: #1e3a8a;
+    margin: 12px 0 6px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.cite-group-title:first-child {
+    margin-top: 0;
+}
+
+.cite-item-card {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    font-size: 0.86em;
+    line-height: 1.45;
+    transition: all 0.15s ease;
+}
+.cite-item-card:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 2px 6px rgba(59, 130, 246, 0.1);
+}
+
+.compensation-dialog {
+    width: 900px;
+    max-width: 95%;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 18px 22px;
+    border: 1px solid #a7f3d0;
+    border-radius: 10px;
+    animation: modalFadeIn 0.2s ease;
+}
+
+.comp-tag-btn {
+    font-size: 0.76em !important;
+    padding: 2px 8px !important;
+    background: #f0fdf4 !important;
+    color: #047857 !important;
+    border-color: #bbf7d0 !important;
+    cursor: pointer;
+}
+.comp-tag-btn:hover {
+    background: #dcfce7 !important;
+    border-color: #86efac !important;
+}
+
+.comp-box-bar-container {
+    position: relative;
+    height: 38px;
+    margin: 20px 8px 14px 8px;
+    display: flex;
+    align-items: center;
+}
+
+.comp-box-bar-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: #e2e8f0;
+    border-radius: 2px;
+}
+
+.comp-box-bar-range {
+    position: absolute;
+    height: 16px;
+    background: linear-gradient(90deg, #bbf7d0, #86efac, #34d399);
+    border: 1px solid #10b981;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(16, 185, 129, 0.3);
+}
+
+.comp-box-pin {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    z-index: 2;
+}
+
+.pin-median {
+    background: #d97706;
+    border: 2px solid #ffffff;
+    box-shadow: 0 0 0 2px #d97706;
+}
+
+.pin-current {
+    background: #2563eb;
+    border: 2px solid #ffffff;
+    box-shadow: 0 0 0 3px #3b82f6, 0 2px 6px rgba(0,0,0,0.3);
+    width: 16px;
+    height: 16px;
+    z-index: 3;
+}
+
+.comp-box-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8em;
+    color: #64748b;
+    margin-top: 6px;
 }

@@ -9,11 +9,11 @@ function updateFavCount() {
     if (el) el.textContent = `(${Object.keys(favMap).length})`;
 }
 
-// 💡 修正 1：同步更新內文側邊欄中的所有星星（無論有幾個星星元件）
+// 修正 1：同步更新內文側邊欄中的所有星星（無論有幾個星星元件）
 function updateSideStar() {
     if (!currentSideId) return;
     const isFavorite = isFav(currentSideId);
-    const starChar = isFavorite ? '⭐' : '☆';
+    const starChar = isFavorite ? '★' : '☆';
     const starTitle = isFavorite ? '已收藏（點擊編輯或取消）' : '加入收藏';
 
     // 同步更新所有有 side-fav-star 類別或 id 為 sideFavStar 的元素
@@ -21,20 +21,27 @@ function updateSideStar() {
         el.textContent = starChar;
         el.dataset.id = currentSideId;
         el.title = starTitle;
-    });
-}
-
-// 💡 修正 2：清單只更新「確定有帶 data-id」的星星，絕不誤傷內文區
-function refreshListStars() {
-    document.querySelectorAll('.fav-star').forEach(el => {
-        const id = el.dataset.id;
-        if (id) {
-            el.textContent = isFav(id) ? '⭐' : '☆';
+        if (isFavorite) {
+            el.style.color = '#f59e0b';
+        } else {
+            el.style.color = '#94a3b8';
         }
     });
 }
 
-// 💡 修正 3：先刷清單、再刷內文，雙向確保狀態一致
+// 修正 2：清單只更新「確定有帶 data-id」的星星，絕不誤傷內文區
+function refreshListStars() {
+    document.querySelectorAll('.fav-star').forEach(el => {
+        const id = el.dataset.id;
+        if (id) {
+            const fav = isFav(id);
+            el.textContent = fav ? '★' : '☆';
+            el.style.color = fav ? '#f59e0b' : '#94a3b8';
+        }
+    });
+}
+
+// 修正 3：先刷清單、再刷內文，雙向確保狀態一致
 function refreshFavUI() {
     updateFavCount();
     if (isFavoritesMode && typeof showFavorites === 'function') {
@@ -45,7 +52,7 @@ function refreshFavUI() {
     updateSideStar(); // 保證內文星星最後更新，絕對不會被蓋回 ☆
 }
 
-// 💡 修正 4：新增內文星星點擊專用函式
+// 修正 4：新增內文星星點擊專用函式
 function toggleSideFav() {
     if (currentSideId) {
         toggleFav(currentSideId);
@@ -121,7 +128,7 @@ async function deleteUser() {
         return;
     }
     
-    const confirmMsg = `⚠️ 警告：確定要永久刪除使用者「${currentUser.name}」嗎？\n\n這項操作將會清空該帳號底下的【所有資料夾】與【所有收藏紀錄】，且無法復原！`;
+    const confirmMsg = `警告：確定要永久刪除使用者「${currentUser.name}」嗎？\n\n這項操作將會清空該帳號底下的【所有資料夾】與【所有收藏紀錄】，且無法復原！`;
     if (!confirm(confirmMsg)) return;
     
     try {
@@ -191,8 +198,7 @@ async function createNewFolder() {
     }
 }
 async function deleteFolderById(folderId, folderName) {
-    // 👇 修改了這裡的警告標語，明確告知案件會跟著刪除
-    if (!confirm(`⚠️ 警告：確定要刪除資料夾「${folderName}」嗎？\n\n（注意：資料夾刪除後，裡面收藏的【所有判決書】也都會跟著被徹底刪除，且無法復原！）`)) {
+    if (!confirm(`警告：確定要刪除資料夾「${folderName}」嗎？\n\n（注意：資料夾刪除後，裡面收藏的【所有判決書】也都會跟著被徹底刪除，且無法復原！）`)) {
         return;
     }
 
@@ -337,12 +343,12 @@ async function showFavorites(filterFolderId = 'ALL') {
             favList = favListRaw.filter(f => String(f.folder_id) === String(filterFolderId));
         }
 
-        // 👇 判斷是否要顯示「刪除此資料夾」按鈕
+        // 判斷是否要顯示「刪除此資料夾」按鈕
         let deleteFolderBtn = "";
         if (filterFolderId !== 'ALL' && filterFolderId !== 'NONE') {
             const currentFolder = foldersList.find(f => String(f.id) === String(filterFolderId));
             if (currentFolder) {
-                deleteFolderBtn = `<button class="btn-secondary" style="padding: 4px 10px; font-size: 0.9em; color: #d32f2f; border-color: #ffcdd2; background: #ffebee;" onclick="deleteFolderById(${currentFolder.id}, '${escapeHtml(currentFolder.name)}')">🗑️ 刪除此資料夾</button>`;
+                deleteFolderBtn = `<button class="btn-secondary" style="padding: 4px 10px; font-size: 0.9em; color: #d32f2f; border-color: #ffcdd2; background: #ffebee;" onclick="deleteFolderById(${currentFolder.id}, '${escapeHtml(currentFolder.name)}')">刪除此資料夾</button>`;
             }
         }
 
@@ -351,7 +357,7 @@ async function showFavorites(filterFolderId = 'ALL') {
             resultsDiv.innerHTML = `
                 <div class="table-toolbar">
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <span>📁 ${escapeHtml(currentUser.name)} 的案件</span>
+                        <span>${escapeHtml(currentUser.name)} 的案件</span>
                         ${renderFolderFilter(filterFolderId)}
                         ${deleteFolderBtn}
                     </div>
@@ -373,12 +379,12 @@ async function showFavorites(filterFolderId = 'ALL') {
         let html = `
             <div class="table-toolbar">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <span>📁 ${escapeHtml(currentUser.name)} 的案件，共 <strong>${judgmentsData.length}</strong> 筆</span>
+                    <span>${escapeHtml(currentUser.name)} 的案件，共 <strong>${judgmentsData.length}</strong> 筆</span>
                     ${renderFolderFilter(filterFolderId)}
                     ${deleteFolderBtn}
                 </div>
                 <div>
-                    <button class="btn-primary" style="padding: 6px 14px; background: #2e7d32;" onclick="exportSelectedJudgments()">📥 匯出選取判決</button>
+                    <button class="btn-primary" style="padding: 6px 14px;" onclick="exportSelectedJudgments()">匯出選取判決</button>
                     <button class="btn-toggle" onclick="exitFavorites()">← 回到搜尋結果</button>
                 </div>
             </div>
@@ -397,12 +403,12 @@ async function showFavorites(filterFolderId = 'ALL') {
             const title = `${getCourtName(item)} ${yr} 年度 ${tp} 字第 ${no} 號${getDocumentKind(item)}`;
             
             const favData = favMap[item.id] || {};
-            const folderLabel = favData.folder_name ? `<span style="background:#e3f2fd; padding:2px 6px; border-radius:4px; font-size:0.85em; margin-right:5px;">📁 ${escapeHtml(favData.folder_name)}</span>` : '';
-            const noteLabel = favData.note ? `<span style="color:#e65100; word-break: break-all; white-space: pre-wrap; display: inline-block;">📝 ${escapeHtml(favData.note)}</span>` : `<span style="color:#aaa;">（無備註）</span>`;
+            const folderLabel = favData.folder_name ? `<span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:0.85em; margin-right:5px;">${escapeHtml(favData.folder_name)}</span>` : '';
+            const noteLabel = favData.note ? `<span style="color:#d97706; word-break: break-all; white-space: pre-wrap; display: inline-block;">[備註] ${escapeHtml(favData.note)}</span>` : `<span style="color:#aaa;">（無備註）</span>`;
             html += `<tr>
                 <td style="text-align:center;"><input type="checkbox" class="judgment-cb" value="${item.id}"></td>
                 <td style="text-align:center;">
-                    <span style="cursor:pointer; font-size:1.3em;" onclick="openFavModal('${item.id}')" title="編輯收藏">⭐</span>
+                    <span style="cursor:pointer; font-size:1.3em; color:#f59e0b;" onclick="openFavModal('${item.id}')" title="編輯收藏">★</span>
                 </td>
                 <td>
                     <a class="result-title-link" onclick="showFullContent('${item.id}')">${title}</a>
@@ -416,7 +422,7 @@ async function showFavorites(filterFolderId = 'ALL') {
         });
         resultsDiv.innerHTML = html + '</tbody></table>';
     } catch (e) {
-        resultsDiv.innerHTML = `<p style="color:red;">❌ 載入收藏失敗：${escapeHtml(e.message)}</p>`;
+        resultsDiv.innerHTML = `<p style="color:#dc2626;">載入收藏失敗：${escapeHtml(e.message)}</p>`;
     }
 }
 
@@ -424,7 +430,7 @@ function renderFolderFilter(currentVal) {
     let opts = `<option value="ALL" ${currentVal==='ALL'?'selected':''}>全部收藏</option>
                 <option value="NONE" ${currentVal==='NONE'?'selected':''}>（未分類）</option>`;
     foldersList.forEach(f => {
-        opts += `<option value="${f.id}" ${String(currentVal)===String(f.id)?'selected':''}>📁 ${escapeHtml(f.name)}</option>`;
+        opts += `<option value="${f.id}" ${String(currentVal)===String(f.id)?'selected':''}>${escapeHtml(f.name)}</option>`;
     });
     return `<select style="margin-left: 15px; padding: 5px;" onchange="showFavorites(this.value)">${opts}</select>`;
 }

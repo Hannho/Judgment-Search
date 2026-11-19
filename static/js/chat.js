@@ -178,6 +178,10 @@ function parseMarkdownToHtml(markdownText) {
     let result = output.join('');
     // 粗體轉換: **text**
     result = result.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+    // AI 回答段落引述錨定 (Citation Anchoring)
+    result = result.replace(/【(引用[：:][^】]+)】/g, '<span class="citation-badge" onclick="locateCitation(\'$1\')" title="點擊跳轉至判決書該引述段落">[引述] $1</span>');
+    result = result.replace(/【(主文|事實及理由|理由|裁判結果|量刑理由|爭點分析)】/g, '<span class="citation-badge" onclick="locateCitation(\'$1\')" title="點擊定位至判決書該段落">[段落] $1</span>');
     return result;
 }
 
@@ -213,56 +217,132 @@ function sendChatMessage() {
         <span style="color:#64748b; font-size:0.88em; margin-left:4px;">AI 正在以 <strong>${getTaskModeLabel(taskMode)}</strong> 模式研讀您選取的 <strong>${selectedJudgments.length}</strong> 筆案件中...</span>
     `);
 
-    const contentsToSent = selectedJudgments.map(item => {
+    const contentsToSent = selectedJudgments.map((item, idx) => {
         const idParts = item.id ? item.id.split(',') : [];
-        const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
-        const displayType = (item.case_type && item.case_type.trim() !== "") ? item.case_type : (idParts[2] || "");
-        const displayNo = (item.case_no && item.case_no.trim() !== "") ? item.case_no : (idParts[3] || "");
-        return `【${displayYear}年度${displayType}字第${displayNo}號】\n${item.content}`;
+        const yr = item.year || idParts[1] || "";
+        const tp = item.case_type || idParts[2] || "";
+        const no = item.case_no || idParts[3] || "";
+        
+        let caseText = `【案件 ${idx + 1}】${yr}年度${tp}字第${no}號\n`;
+        
+        // 優先讀取 main_text 與 reason，如果為空則退回 content
+        const main = (item.main_text || "").trim();
+        const rsn = (item.reason || "").trim();
+        const cnt = (item.content || "").trim();
+
+        if (main) {
+            caseText += `【主文】\n${main}\n\n`;
+        }
+        if (rsn) {
+            caseText += `【理由】\n${rsn}`;
+        } else if (cnt) {
+            caseText += `【判決全文】\n${cnt}`;
+        } else {
+            caseText += `【判決內容】\n(查無具體內文)`;
+        }
+        
+        return caseText;
     });
 
-    fetch('/api/ask_multiple', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            judgments_content: contentsToSent,
-            question: question,
-            task_mode: taskMode,
-            custom_instruction: customInstruction
-        })
-    })
-    .then(res => res.json())
-    .then(data => {
-        const botBubble = loadingRow.querySelector('.chat-bubble');
-        let rawAnswer = "";
-        if (Array.isArray(data.answer)) {
-            rawAnswer = data.answer.map(item => item.text || "").join("\n");
-        } else if (typeof data.answer === 'string') {
-            rawAnswer = data.answer;
-        } else {
-            rawAnswer = JSON.stringify(data.answer);
+    // 關鍵除錯印出：請打開瀏覽器 Console (F12) 觀察
+    console.log("=== 準備送往 AI 的內容 ===", contentsToSent);
+
+    const payload = {
+        judgments_content: contentsToSent,
+        question: question,
+        task_mode: taskMode,
+        custom_instruction: customInstruction
+    };
+
+    const botBubble = loadingRow.querySelector('.chat-bubble');
+    let fullAnswer = "";
+
+    // 優先使用 SSE 串流以達到即時逐字輸出與防超時
+    (async () => {
+        try {
+            const response = await fetch('/api/ai/ask_stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok || !response.body) {
+                throw new Error("串流端點回應異常，退回傳統模式");
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = "";
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (trimmed.startsWith('data: ')) {
+                        const jsonStr = trimmed.slice(6);
+                        if (!jsonStr) continue;
+                        try {
+                            const data = JSON.parse(jsonStr);
+                            if (data.type === 'status') {
+                                botBubble.innerHTML = `<span style="color:#666;">${escapeHtml(data.text)}</span>`;
+                            } else if (data.type === 'token') {
+                                fullAnswer += data.text;
+                                botBubble.innerHTML = parseMarkdownToHtml(fullAnswer);
+                            } else if (data.type === 'error') {
+                                botBubble.innerHTML = `<span style="color:#d32f2f;">錯誤：${escapeHtml(data.text)}</span>`;
+                            }
+                        } catch (pe) {
+                            console.error("JSON 解析失敗:", pe);
+                        }
+                    }
+                }
+                const chatMessages = document.getElementById('chatMessages');
+                if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            if (!fullAnswer && !botBubble.innerHTML.includes('<strong>')) {
+                botBubble.innerHTML = `<span style="color:#666;">模型分析完畢，未產生具體文字。</span>`;
+            }
+        } catch (streamErr) {
+            console.warn("串流嘗試失敗，退回傳統模式呼叫:", streamErr);
+            try {
+                const res = await fetch('/api/ai/ask_multiple', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                let rawAnswer = "";
+                if (Array.isArray(data.answer)) {
+                    rawAnswer = data.answer.map(item => item.text || "").join("\n");
+                } else if (typeof data.answer === 'string') {
+                    rawAnswer = data.answer;
+                } else {
+                    rawAnswer = JSON.stringify(data.answer);
+                }
+                botBubble.innerHTML = parseMarkdownToHtml(rawAnswer);
+            } catch (err) {
+                console.error(err);
+                botBubble.innerHTML = `<span style="color:#d32f2f;">連線失敗：請確認後端伺服器與本機模型服務是否正常啟動。</span>`;
+            }
+        } finally {
+            if (input) {
+                input.disabled = false;
+                input.focus();
+            }
+            if (sendBtn) {
+                sendBtn.disabled = false;
+            }
+            const chatMessages = document.getElementById('chatMessages');
+            if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
         }
-        // 解析並漂亮渲染 Markdown 表格與內容
-        botBubble.innerHTML = parseMarkdownToHtml(rawAnswer);
-    })
-    .catch(err => {
-        console.error(err);
-        const botBubble = loadingRow.querySelector('.chat-bubble');
-        botBubble.innerHTML = `<span style="color:#d32f2f;">連線失敗：請確認後端伺服器與本機模型服務是否正常啟動。</span>`;
-    })
-    .finally(() => {
-        if (input) {
-            input.disabled = false;
-            input.focus();
-        }
-        if (sendBtn) {
-            sendBtn.disabled = false;
-        }
-        const chatMessages = document.getElementById('chatMessages');
-        if (chatMessages) {
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-    });
+    })();
 }
 
 function getTaskModeLabel(mode) {
@@ -274,4 +354,70 @@ function getTaskModeLabel(mode) {
         custom: "自訂指令"
     };
     return labels[mode] || "智能分析";
+}
+
+// ==========================================
+// AI 回答段落引述錨定跳轉 (Citation Anchoring)
+// ==========================================
+window.locateCitation = function(keyword) {
+    const sidePanel = document.getElementById('sidePanel');
+    const sideBody = document.getElementById('sideBody');
+    if (!sidePanel || sidePanel.style.display === 'none') {
+        alert("請先在左側搜尋結果中點選一筆判決開啟全文，再點選引述進行段落定位！");
+        return;
+    }
+    const cleanKw = keyword.replace(/^[【§\uD83D\uDCCD\uD83D\uDCCC]|\[(引述|段落)\]|引用[：:]/g, '').replace(/[】]$/g, '').trim();
+    if (!cleanKw) return;
+
+    const bodyText = sideBody.textContent;
+    const targetIdx = bodyText.indexOf(cleanKw);
+    if (targetIdx === -1) {
+        // 嘗試關鍵詞子字串
+        const sub = cleanKw.substring(0, Math.min(8, cleanKw.length));
+        if (bodyText.indexOf(sub) !== -1) {
+            flashHighlightInSideBody(sub);
+            return;
+        }
+        alert(`在目前開啟的判決書內文中未找到「${cleanKw}」段落。`);
+        return;
+    }
+    flashHighlightInSideBody(cleanKw);
+};
+
+function flashHighlightInSideBody(term) {
+    const sideBody = document.getElementById('sideBody');
+    if (!sideBody) return;
+
+    // 清除舊的臨時閃爍高亮
+    sideBody.querySelectorAll('.temp-citation-flash').forEach(el => {
+        const textNode = document.createTextNode(el.textContent);
+        el.parentNode.replaceChild(textNode, el);
+    });
+
+    const innerHtml = sideBody.innerHTML;
+    const escapedTerm = escapeHtml(term);
+    const regex = new RegExp(escapedTerm, 'g');
+    
+    // 替換第一個出現位置為高亮閃爍標記
+    let replaced = false;
+    sideBody.innerHTML = innerHtml.replace(regex, (match) => {
+        if (!replaced) {
+            replaced = true;
+            return `<mark class="temp-citation-flash" style="background:#fef08a; color:#854d0e; padding:2px 4px; border-radius:3px; font-weight:bold; box-shadow:0 0 10px rgba(234,179,8,0.7);">${match}</mark>`;
+        }
+        return match;
+    });
+
+    const target = sideBody.querySelector('.temp-citation-flash');
+    if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // 3.5 秒後淡出高亮
+        setTimeout(() => {
+            if (target && target.parentNode) {
+                target.style.transition = 'background-color 1s ease, box-shadow 1s ease';
+                target.style.background = 'transparent';
+                target.style.boxShadow = 'none';
+            }
+        }, 3500);
+    }
 }

@@ -39,7 +39,7 @@ function escapeRegExp(string) {
 
 function showSearchError(msg) {
     const errBox = document.getElementById('searchErrorMessage');
-    errBox.textContent = `⚠️ ${msg}`;
+    errBox.textContent = msg;
     errBox.style.display = 'block';
 }
 

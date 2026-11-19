@@ -6,23 +6,48 @@ function getSelectionInfo() {
     const range = sel.getRangeAt(0);
     if (!body.contains(range.startContainer) || !body.contains(range.endContainer)) return null;
 
+    const item = (typeof judgmentsData !== 'undefined' ? judgmentsData.find(j => j.id === currentSideId) : null) 
+                 || (typeof currentDetailItem !== 'undefined' ? currentDetailItem : null);
+    const full = getSideText(item);
+    if (!full) return null;
+
     const pre = document.createRange();
     pre.selectNodeContents(body);
     pre.setEnd(range.startContainer, range.startOffset);
-    let start = pre.toString().length;
-    let text = range.toString();
+    
+    // 統一將換行符號正規化為 \n (解決 Windows 下 Chrome range.toString() 含有 \r\n 導致長文跨行反白索引失效的問題)
+    let preStr = pre.toString().replace(/\r\n?/g, "\n");
+    let text = range.toString().replace(/\r\n?/g, "\n");
 
+    let start = preStr.length;
     const lead = text.length - text.trimStart().length;
     text = text.trim();
     if (!text) return null;
     start += lead;
 
-    const item = judgmentsData.find(j => j.id === currentSideId);
-    const full = getSideText(item);
     if (full.substring(start, start + text.length) !== text) {
-        const i = full.indexOf(text);
-        if (i === -1) return null;
-        start = i;
+        let i = full.indexOf(text);
+        if (i === -1) {
+            // 嘗試容錯比對長句跨換行符號
+            const cleanSnippet = text.replace(/[\r\n\s]+/g, '');
+            if (cleanSnippet.length >= 2) {
+                const head = text.substring(0, Math.min(20, text.length)).trim();
+                const headIdx = full.indexOf(head);
+                if (headIdx !== -1) {
+                    start = headIdx;
+                    const candidate = full.substring(start, start + text.length);
+                    if (candidate.replace(/[\r\n\s]+/g, '') === cleanSnippet) {
+                        text = candidate;
+                    }
+                } else {
+                    return null;
+                }
+            } else {
+                return null;
+            }
+        } else {
+            start = i;
+        }
     }
 
     const rects = range.getClientRects();
@@ -116,8 +141,9 @@ function startNoteFromMenu() {
 
 function openNoteBox(quoteText, noteText, rect) {
     const box = document.getElementById('annNoteBox');
-    const shortQuote = quoteText.length > 60 ? quoteText.substring(0, 60) + '…' : quoteText;
+    const shortQuote = quoteText.length > 80 ? quoteText.substring(0, 80) + '…' : quoteText;
     document.getElementById('annNoteQuote').textContent = shortQuote;
+    document.getElementById('annNoteQuote').title = quoteText;
     document.getElementById('annNoteInput').value = noteText;
     placeFloating(box, rect);
     document.getElementById('annNoteInput').focus();
@@ -170,7 +196,7 @@ function showAnnPopover(idxs, x, y) {
 
         if (type === 'note') {
             return `<div class="ann-pop-item">
-                <div class="ann-pop-head">📝 文字註解 <span class="ann-pop-quote">「${q}」</span></div>
+                <div class="ann-pop-head">文字註解 <span class="ann-pop-quote">「${q}」</span></div>
                 <div class="ann-pop-note">${escapeHtml(a.note || '')}</div>
                 <div class="ann-pop-actions">
                     <a onclick="editAnnotation(${i})">編輯</a>
@@ -179,7 +205,7 @@ function showAnnPopover(idxs, x, y) {
             </div>`;
         }
         return `<div class="ann-pop-item">
-            <div class="ann-pop-head">🖍️ 螢光筆 <span class="ann-pop-quote">「${q}」</span></div>
+            <div class="ann-pop-head">劃線重點 <span class="ann-pop-quote">「${q}」</span></div>
             <div class="ann-pop-actions">
                 <a onclick="removeAnnotation(${i})" style="color:#d32f2f;">取消重點</a>
             </div>
@@ -257,7 +283,8 @@ function resolveAnnotations(text) {
 
 function renderHighlights() {
     if (!currentSideId) return;
-    const item = judgmentsData.find(j => j.id === currentSideId);
+    const item = (typeof judgmentsData !== 'undefined' ? judgmentsData.find(j => j.id === currentSideId) : null) 
+                 || (typeof currentDetailItem !== 'undefined' ? currentDetailItem : null);
     if (!item) return;
 
     const body = document.getElementById('sideBody');

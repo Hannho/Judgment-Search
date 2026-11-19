@@ -34,6 +34,9 @@ def run_sql(sql, params=(), fetch=False):
             rows = [dict(r) for r in cur.fetchall()] if fetch else None
         conn.commit()
         return rows
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -68,21 +71,52 @@ def init_user_tables():
     """)
 
     run_sql("""
-        -- (保留你原有的 app_users, folders 等資料表)
-        
         CREATE TABLE IF NOT EXISTS api_logs (
             id SERIAL PRIMARY KEY,
-            user_id INTEGER REFERENCES app_users(id) ON DELETE SET NULL, -- 若無登入可為 NULL
-            endpoint TEXT NOT NULL,       -- 呼叫的 API 路徑 (例如 /search)
-            method TEXT NOT NULL,         -- HTTP 方法 (GET, POST)
-            process_time FLOAT NOT NULL,  -- 處理速度 (秒)
-            status_code INTEGER NOT NULL, -- HTTP 狀態碼 (200, 500 等)
-            error_message TEXT,           -- 錯誤訊息 (若有的話)
-            created_at TIMESTAMPTZ DEFAULT now() -- 發生時間
+            user_id INTEGER REFERENCES app_users(id) ON DELETE SET NULL,
+            endpoint TEXT NOT NULL,
+            method TEXT NOT NULL,
+            process_time FLOAT NOT NULL,
+            status_code INTEGER NOT NULL,
+            error_message TEXT,
+            created_at TIMESTAMPTZ DEFAULT now()
         );
     """)
+
+    run_sql("""
+        CREATE TABLE IF NOT EXISTS crawler_cache (
+            judgment_id TEXT PRIMARY KEY,
+            history_json TEXT NOT NULL DEFAULT '[]',
+            laws_json TEXT NOT NULL DEFAULT '[]',
+            created_at TIMESTAMPTZ DEFAULT now()
+        );
+        DELETE FROM crawler_cache WHERE history_json = '[]' OR history_json IS NULL;
+    """)
+
 def log_api_usage(user_id, endpoint, method, process_time, status_code, error_message=""):
     run_sql("""
         INSERT INTO api_logs (user_id, endpoint, method, process_time, status_code, error_message)
         VALUES (%s, %s, %s, %s, %s, %s)
     """, (user_id, endpoint, method, process_time, status_code, error_message))
+
+def get_cached_crawler_data(judgment_id):
+    try:
+        rows = run_sql("SELECT history_json, laws_json FROM crawler_cache WHERE judgment_id = %s AND history_json != '[]'", (judgment_id,), fetch=True)
+        if rows:
+            return rows[0]
+        return None
+    except Exception:
+        return None
+
+def set_cached_crawler_data(judgment_id, history_json, laws_json):
+    try:
+        run_sql("""
+            INSERT INTO crawler_cache (judgment_id, history_json, laws_json)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (judgment_id) DO UPDATE
+            SET history_json = EXCLUDED.history_json,
+                laws_json = EXCLUDED.laws_json,
+                created_at = now()
+        """, (judgment_id, history_json, laws_json))
+    except Exception as e:
+        print(f"[crawler_cache] 快取寫入失敗: {e}")

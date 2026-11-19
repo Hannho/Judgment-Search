@@ -1,6 +1,8 @@
 import json
 import time
 import datetime
+import re
+from collections import Counter
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -10,8 +12,8 @@ from database import get_db_connection
 router = APIRouter()
 
 _stats_cache = {}
-CACHE_TTL = 600
-MAX_CACHE_ITEMS = 200
+CACHE_TTL = 1800
+MAX_CACHE_ITEMS = 1000
 
 class JudgmentSearchQuery(BaseModel):
     court: Optional[str] = ""
@@ -44,8 +46,12 @@ def build_search_conditions(query: JudgmentSearchQuery):
     params = []
 
     if query.court:
-        where_clauses.append("id LIKE %s")
-        params.append(f"{query.court}%") 
+        if len(query.court) == 3:
+            where_clauses.append("SUBSTRING(id, 1, 3) = %s")
+            params.append(query.court)
+        else:
+            where_clauses.append("id LIKE %s")
+            params.append(f"{query.court}%") 
     
     if query.start_date:
         where_clauses.append("date >= %s")
@@ -82,25 +88,53 @@ def build_search_conditions(query: JudgmentSearchQuery):
         s = query.content_kw.replace('+', ' + ').replace('-', ' - ').replace('&', ' & ').replace('(', ' ( ').replace(')', ' ) ')
         tokens = [t for t in s.split() if t.strip()]
         content_sql = []
+        param_count_before = len(params)
         for i, token in enumerate(tokens):
-            if token == '+': content_sql.append("OR")
-            elif token == '&': content_sql.append("AND")
+            if token == '+':
+                if content_sql and content_sql[-1] not in ['AND', 'OR', 'NOT', 'AND NOT', '(']:
+                    content_sql.append("OR")
+            elif token == '&':
+                if content_sql and content_sql[-1] not in ['AND', 'OR', 'NOT', 'AND NOT', '(']:
+                    content_sql.append("AND")
             elif token == '-':
-                if not content_sql or content_sql[-1] == '(': content_sql.append("NOT")
-                else: content_sql.append("AND NOT")
+                if not content_sql or content_sql[-1] == '(':
+                    content_sql.append("NOT")
+                elif content_sql[-1] not in ['AND', 'OR', 'NOT', 'AND NOT']:
+                    content_sql.append("AND NOT")
             elif token == '(':
-                if i > 0 and tokens[i-1] not in ['+', '&', '-', '(']: content_sql.append("AND")
+                if i > 0 and content_sql and content_sql[-1] not in ['AND', 'OR', 'NOT', 'AND NOT', '(']:
+                    content_sql.append("AND")
                 content_sql.append("(")
-            elif token == ')': content_sql.append(")")
+            elif token == ')':
+                if content_sql and content_sql[-1] not in ['AND', 'OR', 'NOT', 'AND NOT', '(']:
+                    content_sql.append(")")
             else:
-                if i > 0 and tokens[i-1] not in ['+', '&', '-', '(']: content_sql.append("AND")
+                if i > 0 and content_sql and content_sql[-1] not in ['AND', 'OR', 'NOT', 'AND NOT', '(']:
+                    content_sql.append("AND")
                 content_sql.append("content LIKE %s")
                 params.append(f"%{token}%")
-        
+
+        while content_sql and content_sql[-1] in ['AND', 'OR', 'NOT', 'AND NOT', '(']:
+            content_sql.pop()
+
         opens = content_sql.count('(')
         closes = content_sql.count(')')
-        if opens > closes: content_sql.extend([")"] * (opens - closes))
-        if content_sql: where_clauses.append(f"({' '.join(content_sql)})")
+        if opens > closes:
+            content_sql.extend([")"] * (opens - closes))
+        elif closes > opens:
+            diff = closes - opens
+            new_sql = []
+            for item in content_sql:
+                if item == ')' and diff > 0:
+                    diff -= 1
+                    continue
+                new_sql.append(item)
+            content_sql = new_sql
+
+        if content_sql and any("content LIKE" in item for item in content_sql):
+            where_clauses.append(f"({' '.join(content_sql)})")
+        else:
+            del params[param_count_before:]
 
     if query.doc_type and query.doc_type in ["判決", "裁定"]:
         where_clauses.append("doc_type = %s")
@@ -116,10 +150,10 @@ def build_search_conditions(query: JudgmentSearchQuery):
         params.append(f"%{query.adv_case_type}%")
         
     if query.adv_no_start is not None:
-        where_clauses.append("NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::int >= %s")
+        where_clauses.append("NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::bigint >= %s")
         params.append(query.adv_no_start)
     if query.adv_no_end is not None:
-        where_clauses.append("NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::int <= %s")
+        where_clauses.append("NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::bigint <= %s")
         params.append(query.adv_no_end)
         
     if query.adv_size_min is not None:
@@ -142,8 +176,8 @@ def get_judgments_list(query: JudgmentSearchQuery):
             
             order_clause = "ORDER BY date DESC"
             if query.sort_type == "date_asc": order_clause = "ORDER BY date ASC"
-            elif query.sort_type == "no_desc": order_clause = "ORDER BY NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::int DESC NULLS LAST"
-            elif query.sort_type == "no_asc": order_clause = "ORDER BY NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::int ASC NULLS LAST"
+            elif query.sort_type == "no_desc": order_clause = "ORDER BY NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::bigint DESC NULLS LAST"
+            elif query.sort_type == "no_asc": order_clause = "ORDER BY NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::bigint ASC NULLS LAST"
             elif query.sort_type == "size_desc": order_clause = "ORDER BY size_kb DESC"
             elif query.sort_type == "size_asc": order_clause = "ORDER BY size_kb ASC"
             
@@ -155,6 +189,11 @@ def get_judgments_list(query: JudgmentSearchQuery):
             results = [dict(row) for row in cursor.fetchall()]
         return {"data": results}
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         return JSONResponse(status_code=500, content={"error": str(e)})
     finally:
         if conn: conn.close()
@@ -176,6 +215,11 @@ def get_judgments_by_ids(q: IdsQuery):
             rows = {r["id"]: dict(r) for r in cursor.fetchall()}
         return {"data": [rows[i] for i in ids if i in rows]}
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         return JSONResponse(status_code=500, content={"error": str(e)})
     finally:
         if conn: conn.close()
@@ -244,6 +288,385 @@ def get_judgments_stats(query: JudgmentSearchQuery):
             _stats_cache.pop(next(iter(_stats_cache)))
         _stats_cache[key] = (time.time(), result)
         return result
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    finally:
+        if conn: conn.close()
+
+# ==============================================================================
+# 法官心證風格畫像與傾向統計 (Judge Analytics) & 損害賠償行情分析 (Compensation Analytics)
+# ==============================================================================
+
+CN_NUM = {
+    '零': 0, '一': 1, '二': 2, '兩': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9,
+    '壹': 1, '貳': 2, '參': 3, '肆': 4, '伍': 5, '陸': 6, '柒': 7, '捌': 8, '玖': 9,
+    '拾': 10, '十': 10, '佰': 100, '百': 100, '仟': 1000, '千': 1000, '萬': 10000, '億': 100000000
+}
+
+COURT_NAME_MAP = {
+    "TPH": "臺灣高等法院", "TPD": "臺北地方法院", "PCD": "新北地方法院", "SLD": "士林地方法院",
+    "TYD": "桃園地方法院", "SCD": "新竹地方法院", "MLD": "苗栗地方法院", "TCD": "臺中地方法院",
+    "TCH": "臺灣高等法院 臺中分院", "CHD": "彰化地方法院", "NTD": "南投地方法院", "ULD": "雲林地方法院",
+    "CYD": "嘉義地方法院", "TND": "臺南地方法院", "TNH": "臺灣高等法院 臺南分院", "KSD": "高雄地方法院",
+    "KSH": "臺灣高等法院 高雄分院", "PTD": "屏東地方法院", "TTD": "臺東地方法院", "HLD": "花蓮地方法院",
+    "HLH": "臺灣高等法院 花蓮分院", "ILD": "宜蘭地方法院", "KLD": "基隆地方法院", "PHD": "澎湖地方法院",
+    "KMD": "金門地方法院", "LCD": "連江地方法院", "TPS": "最高法院", "TPA": "最高行政法院",
+    "TPB": "臺北高等行政法院", "TCB": "臺中高等行政法院", "KSB": "高雄高等行政法院", "IPC": "智慧財產及商業法院"
+}
+
+def parse_cn_amount(text: str) -> int:
+    if not text:
+        return 0
+    text = str(text).replace(',', '').replace('，', '').replace(' ', '').strip()
+    m = re.search(r'([0-9]+(?:\.[0-9]+)?)', text)
+    if m:
+        try:
+            val = float(m.group(1))
+            if '億' in text: val *= 100000000
+            elif '萬' in text: val *= 10000
+            return int(val)
+        except ValueError:
+            pass
+    total = 0
+    curr_section = 0
+    curr_num = 0
+    for ch in text:
+        if ch in CN_NUM:
+            n = CN_NUM[ch]
+            if n in [10, 100, 1000]:
+                curr_num = curr_num if curr_num > 0 else 1
+                curr_section += curr_num * n
+                curr_num = 0
+            elif n == 10000:
+                curr_section = (curr_section + curr_num) * 10000
+                total += curr_section
+                curr_section = 0
+                curr_num = 0
+            elif n == 100000000:
+                curr_section = (curr_section + curr_num) * 100000000
+                total += curr_section
+                curr_section = 0
+                curr_num = 0
+            else:
+                curr_num = n
+    total += curr_section + curr_num
+    return total
+
+def extract_case_amounts(main_text: str, content: str = ""):
+    awarded, status, solatium = 0, "其他", 0
+    if not main_text:
+        return awarded, status, solatium
+
+    clean_main = main_text.replace('\n', ' ').strip()
+    if re.search(r'(原告之訴.*?駁回|聲請駁回|上訴駁回|抗告駁回|全部駁回)', clean_main) and not re.search(r'應給付', clean_main):
+        return 0, "完全駁回", solatium
+
+    m_award = re.search(r'(?:應(?:連帶)?給付(?:原告)?|給付原告)\s*(?:新[臺台]幣)?\s*([0-9,，\u4e00-\u9fa5]{1,20})\s*元', clean_main)
+    if m_award:
+        awarded = parse_cn_amount(m_award.group(1))
+        status = "一部准許" if re.search(r'其餘.*?駁回', clean_main) else "全部判准"
+    elif "駁回" in clean_main:
+        status = "完全駁回"
+
+    m_sol = re.search(r'(?:精神)?慰撫金.*?(?:以|認|命)?\s*(?:新[臺台]幣)?\s*([0-9,，\u4e00-\u9fa5]{1,15})\s*元(?:為相當|為適當|為合理)?', clean_main + " " + (content[:3000] if content else ""))
+    if m_sol:
+        solatium = parse_cn_amount(m_sol.group(1))
+
+    return awarded, status, solatium
+
+
+class JudgeAnalyticsQuery(BaseModel):
+    judge_name: str
+    court: Optional[str] = ""
+    limit: int = 100
+
+@router.post("/judge_analytics")
+def get_judge_analytics(q: JudgeAnalyticsQuery):
+    raw_name = q.judge_name or ""
+    clean_name = re.sub(r'[\(（].*?[\)）]', '', raw_name).replace('法官', '').replace('審判長', '').replace('公設', '').strip()
+    if not clean_name or len(clean_name) < 2:
+        return JSONResponse(status_code=400, content={"error": "請提供有效的法官姓名"})
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            # 10 秒安全超時防止長時間鎖定
+            cursor.execute("SET statement_timeout = 10000;")
+            
+            rows = []
+            court_raw = (q.court or "").strip().upper()
+            court_code = court_raw.split(',')[0][:3] if court_raw else ""
+
+            # 優先策略 1: 若指定了法院代碼（如 TNH），使用法院索引以毫秒級快速過濾
+            if court_code and len(court_code) == 3:
+                cursor.execute("""
+                    SELECT id, year, case_type, case_no, date, title, main_text, case_category_name, doc_type
+                    FROM judgments
+                    WHERE SUBSTRING(id, 1, 3) = %s AND content LIKE %s
+                    ORDER BY date DESC
+                    LIMIT %s
+                """, (court_code, f"%{clean_name}%", min(q.limit, 100)))
+                rows = [dict(r) for r in cursor.fetchall()]
+
+            # 策略 2: 若未指定法院或同法院資料為空，使用日期倒序檢索近期判決
+            if not rows:
+                cursor.execute("""
+                    SELECT id, year, case_type, case_no, date, title, main_text, case_category_name, doc_type
+                    FROM judgments
+                    WHERE content LIKE %s
+                    ORDER BY date DESC
+                    LIMIT %s
+                """, (f"%{clean_name}%", min(q.limit, 40)))
+                rows = [dict(r) for r in cursor.fetchall()]
+
+        total_cases = len(rows)
+        if total_cases == 0:
+            return {
+                "judge_name": clean_name,
+                "total_cases": 0,
+                "message": f"本地資料庫中目前未檢索到法官「{clean_name}」之承審判決。"
+            }
+
+        cat_counts = Counter()
+        cause_counts = Counter()
+        court_counts = Counter()
+        criminal_cases = []
+        civil_cases = []
+        years = []
+
+        for r in rows:
+            cat = r.get("case_category_name") or ("刑事" if "刑" in (r.get("case_type") or "") else "民事")
+            cat_counts[cat] += 1
+
+            title = (r.get("title") or "未登載案由").strip()
+            if title: cause_counts[title] += 1
+
+            cid = (r.get("id") or "")[:3]
+            if cid: court_counts[cid] += 1
+
+            y = r.get("year")
+            if y and str(y).isdigit(): years.append(int(y))
+
+            mt = r.get("main_text") or ""
+            if "刑" in cat or "刑" in (r.get("case_type") or ""):
+                criminal_cases.append(mt)
+            else:
+                civil_cases.append(mt)
+
+        # 刑事傾向
+        crim_total = len(criminal_cases)
+        probation_count = sum(1 for m in criminal_cases if "緩刑" in m)
+        commutable_count = sum(1 for m in criminal_cases if "易科罰金" in m)
+        not_guilty_count = sum(1 for m in criminal_cases if "無罪" in m or "免訴" in m or "不受理" in m)
+
+        # 民事傾向
+        civil_total = len(civil_cases)
+        dismiss_count = sum(1 for m in civil_cases if ("原告之訴" in m and "駁回" in m) or ("全部駁回" in m) or (m.startswith("駁回")))
+        award_count = sum(1 for m in civil_cases if "應給付" in m or "准許" in m)
+
+        recent_cases = []
+        for r in rows[:6]:
+            cid = (r.get("id") or "")[:3]
+            court_name = COURT_NAME_MAP.get(cid, "法院")
+            id_parts = (r.get("id") or "").split(',')
+            yr = r.get("year") or (id_parts[1] if len(id_parts) > 1 else "")
+            ct = r.get("case_type") or (id_parts[2] if len(id_parts) > 2 else "")
+            cn = r.get("case_no") or (id_parts[3] if len(id_parts) > 3 else "")
+            full_title = f"{court_name} {yr} 年度 {ct} 字第 {cn} 號"
+            main_snippet = (r.get("main_text") or "（無主文摘要）").replace('\n', ' ')
+            if len(main_snippet) > 80: main_snippet = main_snippet[:80] + "..."
+            recent_cases.append({
+                "id": r.get("id"),
+                "date": r.get("date"),
+                "full_title": full_title,
+                "title": r.get("title") or "無",
+                "main_snippet": main_snippet
+            })
+
+        return {
+            "judge_name": clean_name,
+            "total_cases": total_cases,
+            "year_range": f"民國 {min(years)} 年 ～ {max(years)} 年" if years else "近幾年度",
+            "categories": dict(cat_counts.most_common(5)),
+            "top_causes": [{"name": k, "count": v} for k, v in cause_counts.most_common(6)],
+            "courts": [{"name": COURT_NAME_MAP.get(k, k), "code": k, "count": v} for k, v in court_counts.most_common(4)],
+            "criminal_stats": {
+                "total": crim_total,
+                "probation_rate": round(probation_count / crim_total * 100, 1) if crim_total else 0,
+                "probation_count": probation_count,
+                "commutable_rate": round(commutable_count / crim_total * 100, 1) if crim_total else 0,
+                "commutable_count": commutable_count,
+                "not_guilty_rate": round(not_guilty_count / crim_total * 100, 1) if crim_total else 0,
+                "not_guilty_count": not_guilty_count
+            },
+            "civil_stats": {
+                "total": civil_total,
+                "dismiss_rate": round(dismiss_count / civil_total * 100, 1) if civil_total else 0,
+                "dismiss_count": dismiss_count,
+                "award_rate": round(award_count / civil_total * 100, 1) if civil_total else 0,
+                "award_count": award_count
+            },
+            "recent_cases": recent_cases
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    finally:
+        if conn: conn.close()
+
+
+class CompensationAnalyticsQuery(BaseModel):
+    keyword: Optional[str] = ""
+    title: Optional[str] = ""
+    court: Optional[str] = ""
+    limit: int = 100
+
+@router.post("/compensation_analytics")
+def get_compensation_analytics(q: CompensationAnalyticsQuery):
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("SET statement_timeout = 10000;")
+            where_clauses = ["main_text IS NOT NULL AND main_text != ''"]
+            params = []
+
+            kw = (q.keyword or "").strip()
+            title_kw = (q.title or "").strip()
+
+            if kw:
+                # 使用有 GIN 索引的 title 與 main_text 欄位，秒級響應
+                where_clauses.append("(title LIKE %s OR main_text LIKE %s)")
+                params.extend([f"%{kw}%", f"%{kw}%"])
+            elif title_kw:
+                where_clauses.append("title LIKE %s")
+                params.append(f"%{title_kw}%")
+            else:
+                where_clauses.append("(title LIKE '%損害賠償%' OR title LIKE '%侵權行為%' OR title LIKE '%給付%')")
+
+            court_raw = (q.court or "").strip().upper()
+            court_code = court_raw.split(',')[0][:3] if court_raw else ""
+            if court_code and len(court_code) == 3:
+                where_clauses.append("SUBSTRING(id, 1, 3) = %s")
+                params.append(court_code)
+
+            where_sql = "WHERE " + " AND ".join(where_clauses)
+            sql = f"""
+                SELECT id, year, case_type, case_no, date, title, main_text
+                FROM judgments
+                {where_sql}
+                ORDER BY date DESC
+                LIMIT %s
+            """
+            params.append(min(q.limit, 120))
+            cursor.execute(sql, tuple(params))
+            rows = [dict(r) for r in cursor.fetchall()]
+
+        if not rows:
+            return {
+                "total_analyzed": 0,
+                "keyword": kw or title_kw or "損害賠償",
+                "message": "查無足夠之民事判賠判決以供統計行情。"
+            }
+
+        awarded_list = []
+        solatium_list = []
+        dismissed_count = 0
+        partially_count = 0
+        fully_count = 0
+        sample_cases = []
+
+        for r in rows:
+            mt = r.get("main_text") or ""
+            award, status, sol = extract_case_amounts(mt, "")
+
+            if award > 0:
+                awarded_list.append(award)
+                if status == "一部准許": partially_count += 1
+                else: fully_count += 1
+            elif status == "完全駁回":
+                dismissed_count += 1
+
+            if sol > 0:
+                solatium_list.append(sol)
+
+            if len(sample_cases) < 8 and (award > 0 or status == "完全駁回"):
+                cid = (r.get("id") or "")[:3]
+                court_name = COURT_NAME_MAP.get(cid, "法院")
+                id_parts = (r.get("id") or "").split(',')
+                yr = r.get("year") or (id_parts[1] if len(id_parts) > 1 else "")
+                case_type = r.get("case_type") or (id_parts[2] if len(id_parts) > 2 else "")
+                case_no = r.get("case_no") or (id_parts[3] if len(id_parts) > 3 else "")
+                full_case_no = f"{court_name} {yr} 年度 {case_type} 字第 {case_no} 號"
+
+                sample_cases.append({
+                    "id": r.get("id"),
+                    "date": r.get("date"),
+                    "full_case_no": full_case_no,
+                    "title": r.get("title") or "損害賠償",
+                    "awarded_amount": award,
+                    "awarded_formatted": f"NT$ {award:,}" if award > 0 else "0 元 (原告之訴駁回)",
+                    "solatium_amount": sol,
+                    "status": status,
+                    "main_snippet": (mt.replace('\n', ' ')[:90] + "...") if len(mt) > 90 else mt
+                })
+
+        # 計算統計分位數
+        awarded_list.sort()
+        n = len(awarded_list)
+
+        min_val = awarded_list[0] if n > 0 else 0
+        max_val = awarded_list[-1] if n > 0 else 0
+        median_val = awarded_list[n // 2] if n > 0 else 0
+        q25_val = awarded_list[int(n * 0.25)] if n > 0 else 0
+        q75_val = awarded_list[int(n * 0.75)] if n > 0 else 0
+        avg_val = int(sum(awarded_list) / n) if n > 0 else 0
+
+        # 級距分佈
+        brackets = {
+            "10萬以下": sum(1 for a in awarded_list if a < 100000),
+            "10萬 ~ 30萬": sum(1 for a in awarded_list if 100000 <= a < 300000),
+            "30萬 ~ 50萬": sum(1 for a in awarded_list if 300000 <= a < 500000),
+            "50萬 ~ 100萬": sum(1 for a in awarded_list if 500000 <= a < 1000000),
+            "100萬以上": sum(1 for a in awarded_list if a >= 1000000),
+        }
+
+        # 慰撫金行情
+        sol_avg = int(sum(solatium_list) / len(solatium_list)) if solatium_list else 0
+        solatium_list.sort()
+        sol_med = solatium_list[len(solatium_list) // 2] if solatium_list else 0
+
+        total_analyzed = len(rows)
+        return {
+            "keyword": kw or title_kw or "損害賠償",
+            "total_analyzed": total_analyzed,
+            "award_rate": round(len(awarded_list) / total_analyzed * 100, 1) if total_analyzed else 0,
+            "dismiss_rate": round(dismissed_count / total_analyzed * 100, 1) if total_analyzed else 0,
+            "awarded_count": len(awarded_list),
+            "dismissed_count": dismissed_count,
+            "partially_count": partially_count,
+            "fully_count": fully_count,
+            "distribution": {
+                "min": min_val,
+                "q25": q25_val,
+                "median": median_val,
+                "average": avg_val,
+                "q75": q75_val,
+                "max": max_val
+            },
+            "brackets": brackets,
+            "solatium_stats": {
+                "count": len(solatium_list),
+                "average": sol_avg,
+                "median": sol_med
+            },
+            "sample_cases": sample_cases
+        }
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
     finally:

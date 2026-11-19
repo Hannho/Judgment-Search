@@ -2,6 +2,7 @@ import os
 import re
 import time
 import urllib.parse
+import urllib.request
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -26,7 +27,7 @@ class JudgmentRequest(BaseModel):
     case_type: str
     case_no: str
     date: str
-    include_self: bool = False   # True 則保留「本案自己」的連結（與司法院網頁清單一致）
+    include_self: bool = True   # 預設 True：完整保留本案在內的所有歷審紀錄，與司法院官方數量一致
 
 
 COURT_MAPPING = {
@@ -395,7 +396,8 @@ def open_by_search(driver, req: JudgmentRequest, court_name: str, target_date_st
 
 # 共用專案既有的連線池（database.py）。judgments.id 存的就是 JID，
 # 例如 STEV,108,店小,1032,20190912,1，與司法院連結裡的 id 參數格式一致。
-from database import run_sql
+import json
+from database import run_sql, get_cached_crawler_data, set_cached_crawler_data
 
 
 def jid_from_url(url: str) -> str:
@@ -445,6 +447,28 @@ def get_judgment(req: JudgmentIdRequest):
 
 @router.post("/get_history")
 def get_history(req: JudgmentRequest):
+    # ---- 優先查閱本地快取（僅在已有歷審結果時直接回傳，空紀錄不命中以防誤判）----
+    cached = get_cached_crawler_data(req.id)
+    if cached:
+        try:
+            cached_history = json.loads(cached.get("history_json") or "[]")
+            cached_laws = json.loads(cached.get("laws_json") or "[]")
+            if cached_history and len(cached_history) > 0:
+                if not req.include_self:
+                    me = urllib.parse.unquote(req.id).strip().lower()
+                    cached_history = [
+                        h for h in cached_history
+                        if urllib.parse.unquote(
+                            urllib.parse.parse_qs(urllib.parse.urlparse(h["url"]).query).get("id", [""])[0]
+                        ).strip().lower() != me
+                    ]
+                cached_history = attach_db_status(cached_history)
+                print(f"[get_history] 命中本地快取: {req.id} (共 {len(cached_history)} 筆歷審)")
+                return {"history": cached_history, "laws": cached_laws, "cached": True}
+        except Exception as e:
+            print(f"[get_history] 快取解析失敗，退回現場爬蟲模式: {e}")
+
+    # ---- 完整 Selenium 瀏覽器流程（司法院歷審折疊面板必須透過 JS 點擊展開）----
     court_code = req.id.split(",")[0][:3]
     court_name = COURT_MAPPING.get(court_code, "未知法院")
     target_date_str = parse_target_date(req.date)
@@ -507,10 +531,17 @@ def get_history(req: JudgmentRequest):
             ).strip().lower() != me
         ]
 
+    # 僅在確實有抓到歷審紀錄時才寫入快取，避免暫時網路失敗被永遠快取
+    if history_results and len(history_results) > 0:
+        try:
+            set_cached_crawler_data(req.id, json.dumps(history_results), json.dumps(law_results))
+            print(f"[get_history] 成功爬取並寫入快取: {req.id} (共 {len(history_results)} 筆歷審)")
+        except Exception as ce:
+            print(f"[crawler] 寫入快取失敗: {ce}")
+
     history_results = attach_db_status(history_results)
 
     result = {"history": history_results, "laws": law_results}
     if not history_results:
-        # 沒抓到時附上線索，方便前端/日誌判斷（不影響原本的 history 欄位）
         result["debug"] = debug_note or "no history links found (case may have no history)"
     return result
