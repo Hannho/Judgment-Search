@@ -90,8 +90,32 @@ def init_user_tables():
             laws_json TEXT NOT NULL DEFAULT '[]',
             created_at TIMESTAMPTZ DEFAULT now()
         );
-        DELETE FROM crawler_cache WHERE history_json = '[]' OR history_json IS NULL;
+        CREATE TABLE IF NOT EXISTS sync_logs (
+            id SERIAL PRIMARY KEY,
+            sync_date VARCHAR(20) NOT NULL,
+            status VARCHAR(20) NOT NULL,
+            total_downloaded INTEGER DEFAULT 0,
+            total_inserted INTEGER DEFAULT 0,
+            total_skipped INTEGER DEFAULT 0,
+            total_removed INTEGER DEFAULT 0,
+            error_message TEXT,
+            started_at TIMESTAMPTZ DEFAULT now(),
+            finished_at TIMESTAMPTZ
+        );
+        ALTER TABLE sync_logs ADD COLUMN IF NOT EXISTS total_removed INTEGER DEFAULT 0;
     """)
+
+def get_recent_sync_logs(limit=10):
+    try:
+        return run_sql("""
+            SELECT id, sync_date, status, total_downloaded, total_inserted, total_skipped, total_removed,
+                   error_message, started_at, finished_at
+            FROM sync_logs
+            ORDER BY id DESC
+            LIMIT %s
+        """, (limit,), fetch=True) or []
+    except Exception:
+        return []
 
 def log_api_usage(user_id, endpoint, method, process_time, status_code, error_message=""):
     run_sql("""
@@ -101,7 +125,7 @@ def log_api_usage(user_id, endpoint, method, process_time, status_code, error_me
 
 def get_cached_crawler_data(judgment_id):
     try:
-        rows = run_sql("SELECT history_json, laws_json FROM crawler_cache WHERE judgment_id = %s AND history_json != '[]'", (judgment_id,), fetch=True)
+        rows = run_sql("SELECT history_json, laws_json FROM crawler_cache WHERE judgment_id = %s", (judgment_id,), fetch=True)
         if rows:
             return rows[0]
         return None

@@ -114,10 +114,10 @@ def remove_favorite(judgment_id: str, x_user_id: Optional[str] = Header(None)):
 def delete_folder(folder_id: int, x_user_id: Optional[str] = Header(None)):
     uid = get_uid(x_user_id)
     try:
-        # 👇 1. 先強制刪除該資料夾內的所有收藏紀錄
-        run_sql("DELETE FROM favorites WHERE folder_id = %s AND user_id = %s", (folder_id, uid))
+        # 將該資料夾內的書籤安全移至「未分類」（folder_id = NULL），避免誤刪重要收藏
+        run_sql("UPDATE favorites SET folder_id = NULL WHERE folder_id = %s AND user_id = %s", (folder_id, uid))
         
-        # 👇 2. 再刪除資料夾本身
+        # 刪除資料夾本身
         run_sql("DELETE FROM folders WHERE id = %s AND user_id = %s", (folder_id, uid))
         return {"ok": True}
     except Exception as e:

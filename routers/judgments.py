@@ -33,6 +33,33 @@ class JudgmentSearchQuery(BaseModel):
     adv_no_end: Optional[int] = None
     adv_size_min: Optional[float] = None
     adv_size_max: Optional[float] = None
+    synonyms_expand: bool = False
+
+# 常用法學關鍵詞同義詞辭典
+LEGAL_SYNONYMS = {
+    "車禍": ["車禍", "交通事故", "過失傷害", "肇事", "道路交通", "過失致死"],
+    "交通事故": ["車禍", "交通事故", "過失傷害", "道路交通"],
+    "借錢": ["借錢", "消費借貸", "清償借款", "返還借款", "借貸", "借據"],
+    "借貸": ["借錢", "消費借貸", "清償借款", "返還借款", "借款"],
+    "欠錢": ["欠款", "清償借款", "給付票款", "返還借款", "本票"],
+    "離婚": ["離婚", "夫妻財產", "剩餘財產分配", "監護權", "親權", "侵害配偶權"],
+    "外遇": ["侵害配偶權", "配偶身分法益", "通姦", "不正常男女交往"],
+    "遺產": ["遺產", "繼承權", "特留分", "應繼分", "遺囑", "分割遺產"],
+    "詐欺": ["詐欺", "詐騙", "洗錢防制法", "人頭帳戶", "車手", "加重詐欺"],
+    "洗錢": ["洗錢防制法", "人頭帳戶", "詐欺取財", "洗錢"],
+    "租屋": ["租賃", "租屋", "房屋租賃", "遷讓房屋", "給付租金", "押租金"],
+    "房租": ["租金", "給付租金", "遷讓房屋", "租賃契約", "押金"],
+    "資遣": ["資遣費", "勞基法", "勞動基準法", "非自願離職", "預告期間工資"],
+    "開除": ["終止勞動契約", "確認僱傭關係", "非法解雇", "解僱", "勞資爭議"],
+    "薪水": ["給付工資", "薪資", "工資", "加班費", "勞基法"],
+    "毒品": ["毒品危害防制條例", "施用毒品", "販賣毒品", "持有毒品", "第二級毒品"],
+    "妨害名譽": ["公然侮辱", "誹謗", "加重誹謗", "妨害名譽", "名譽權"],
+    "罵人": ["公然侮辱", "誹謗", "妨害名譽", "名譽權損害"],
+    "賠償": ["損害賠償", "侵權行為", "國家賠償", "精神慰撫金"],
+    "違約": ["違約金", "債務不履行", "給付遲延", "解除契約", "損害賠償"],
+    "房屋買賣": ["物之瑕疵擔保", "減少價金", "解除契約", "買賣價金", "違章建築"],
+    "漏水": ["房屋漏水", "修繕義務", "物之瑕疵", "侵權行為損害賠償"]
+}
 
 class IdsQuery(BaseModel):
     ids: List[str]
@@ -71,8 +98,19 @@ def build_search_conditions(query: JudgmentSearchQuery):
     
     if query.keyword:
         for kw in query.keyword.split():
-            where_clauses.append("(title LIKE %s OR content LIKE %s OR case_no LIKE %s OR id LIKE %s)")
-            params.extend([f"%{kw}%", f"%{kw}%", f"%{kw}%", f"%{kw}%"])
+            clean_kw = kw.strip()
+            if not clean_kw:
+                continue
+            if query.synonyms_expand and clean_kw in LEGAL_SYNONYMS:
+                syn_list = LEGAL_SYNONYMS[clean_kw]
+                syn_subclauses = []
+                for s in syn_list:
+                    syn_subclauses.append("(title LIKE %s OR content LIKE %s OR case_no LIKE %s OR id LIKE %s)")
+                    params.extend([f"%{s}%", f"%{s}%", f"%{s}%", f"%{s}%"])
+                where_clauses.append("(" + " OR ".join(syn_subclauses) + ")")
+            else:
+                where_clauses.append("(title LIKE %s OR content LIKE %s OR case_no LIKE %s OR id LIKE %s)")
+                params.extend([f"%{clean_kw}%", f"%{clean_kw}%", f"%{clean_kw}%", f"%{clean_kw}%"])
     
     if query.title_kw:
         for kw in query.title_kw.split():
@@ -172,6 +210,8 @@ def get_judgments_list(query: JudgmentSearchQuery):
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
+            # 8 秒安全超時，防止長文 LIKE 掃描耗盡連線池
+            cursor.execute("SET statement_timeout = 8000;")
             where_sql, params = build_search_conditions(query)
             
             order_clause = "ORDER BY date DESC"
@@ -194,7 +234,8 @@ def get_judgments_list(query: JudgmentSearchQuery):
                 conn.rollback()
             except Exception:
                 pass
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        print(f"[stats] 統計計算發生異常或超時，安全降級: {e}")
+        return {"total": 0, "facets": {"courts": {}, "years": {}, "categories": {}}}
     finally:
         if conn: conn.close()
 
@@ -220,7 +261,8 @@ def get_judgments_by_ids(q: IdsQuery):
                 conn.rollback()
             except Exception:
                 pass
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        print(f"[stats] 統計計算發生異常或超時，安全降級: {e}")
+        return {"total": 0, "facets": {"courts": {}, "years": {}, "categories": {}}}
     finally:
         if conn: conn.close()
 
@@ -235,6 +277,8 @@ def get_judgments_stats(query: JudgmentSearchQuery):
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
+            # 8 秒安全超時，防止統計大型查詢阻塞連線池
+            cursor.execute("SET statement_timeout = 8000;")
             where_sql, params = build_search_conditions(query)
             facets = {"courts": {}, "years": {}, "categories": {}}
 
@@ -294,7 +338,8 @@ def get_judgments_stats(query: JudgmentSearchQuery):
                 conn.rollback()
             except Exception:
                 pass
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        print(f"[stats] 統計計算發生異常或超時，安全降級: {e}")
+        return {"total": 0, "facets": {"courts": {}, "years": {}, "categories": {}}}
     finally:
         if conn: conn.close()
 
@@ -515,7 +560,17 @@ def get_judge_analytics(q: JudgeAnalyticsQuery):
             "recent_cases": recent_cases
         }
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        if conn:
+            try: conn.rollback()
+            except Exception: pass
+        err_msg = str(e)
+        if "statement timeout" in err_msg.lower() or "canceling statement" in err_msg.lower():
+            return {
+                "judge_name": clean_name,
+                "total_cases": 0,
+                "message": f"檢索法官「{clean_name}」資料庫超時（資料量龐大）。建議稍候再試，或於首頁以「法官姓名」進行精確檢索。"
+            }
+        return JSONResponse(status_code=500, content={"error": f"無法取得法官心證數據：{err_msg}"})
     finally:
         if conn: conn.close()
 
@@ -668,6 +723,147 @@ def get_compensation_analytics(q: CompensationAnalyticsQuery):
             "sample_cases": sample_cases
         }
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        if conn:
+            try: conn.rollback()
+            except Exception: pass
+        err_msg = str(e)
+        if "statement timeout" in err_msg.lower() or "canceling statement" in err_msg.lower():
+            return {
+                "keyword": kw or title_kw or "損害賠償",
+                "total_analyzed": 0,
+                "message": "損害賠償行情分析查詢超時（資料庫運算量較大）。建議縮小法院或年度範圍重試。"
+            }
+        return JSONResponse(status_code=500, content={"error": f"無法取得損害賠償行情數據：{err_msg}"})
+    finally:
+        if conn: conn.close()
+
+
+class SimilarCaseRequest(BaseModel):
+    id: str
+
+
+@router.post("/similar_cases")
+def get_similar_cases(req: SimilarCaseRequest):
+    """依據當前裁判的案由、類別與關鍵字，推薦 3~4 筆高度相關之相似判決"""
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, title, case_category_name, year, main_text FROM judgments WHERE id = %s", (req.id,))
+            target = cur.fetchone()
+            if not target:
+                return {"similar_cases": []}
+
+            category = target["case_category_name"] or "民事"
+            title = (target["title"] or "").strip()
+            clean_title = re.sub(r"[\(（].*?[\)）]", "", title).strip()
+            title_kw = clean_title if clean_title else title
+
+            # 優先搜尋同類別、相似案由之最新判決
+            cur.execute("""
+                SELECT id, year, case_type, case_no, date, title, main_text, doc_type, case_category_name
+                FROM judgments
+                WHERE id != %s AND case_category_name = %s AND title LIKE %s
+                ORDER BY date DESC
+                LIMIT 4;
+            """, (req.id, category, f"%{title_kw}%"))
+            rows = [dict(r) for r in cur.fetchall()]
+
+            # 若比對數量較少，放寬至同類別最新案
+            if len(rows) < 2:
+                cur.execute("""
+                    SELECT id, year, case_type, case_no, date, title, main_text, doc_type, case_category_name
+                    FROM judgments
+                    WHERE id != %s AND case_category_name = %s
+                    ORDER BY date DESC
+                    LIMIT 4;
+                """, (req.id, category))
+                rows = [dict(r) for r in cur.fetchall()]
+
+            return {"similar_cases": rows}
+    except Exception as e:
+        print(f"[similar_cases] 查詢失敗: {e}")
+        return {"similar_cases": []}
+    finally:
+        if conn: conn.close()
+
+
+@router.post("/outcome_analytics")
+def get_outcome_analytics(query: JudgmentSearchQuery):
+    """
+    大數據勝敗訴分析：
+    分析目前搜尋條件下判決的主文特徵，歸納出「原告全勝」、「部分勝訴」、「敗訴駁回」之比例分佈
+    """
+    conn = None
+    try:
+        where_sql, params = build_search_conditions(query)
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT main_text, doc_type
+                FROM judgments
+                {where_sql} AND main_text IS NOT NULL AND main_text != ''
+                ORDER BY date DESC
+                LIMIT 300;
+            """, tuple(params))
+            rows = cur.fetchall()
+
+        total = len(rows)
+        if total == 0:
+            return {
+                "total_analyzed": 0,
+                "full_win_count": 0,
+                "partial_win_count": 0,
+                "loss_count": 0,
+                "other_count": 0,
+                "full_win_pct": 0,
+                "partial_win_pct": 0,
+                "loss_pct": 0,
+                "other_pct": 0
+            }
+
+        full_win = 0
+        partial_win = 0
+        loss = 0
+        other = 0
+
+        for r in rows:
+            mt = (r["main_text"] or "").strip()
+
+            if any(k in mt for k in ("原告之訴駁回", "原告之聲請駁回", "上訴駁回", "抗告駁回", "再審之訴駁回", "訴訟費用由原告負擔", "上訴費用由上訴人負擔")):
+                if any(k in mt for k in ("其餘之訴駁回", "一部勝訴", "原告其餘")):
+                    partial_win += 1
+                else:
+                    loss += 1
+            elif any(k in mt for k in ("其餘之訴駁回", "原告其餘之訴駁回", "原告其餘", "各自分擔", "按比例")):
+                partial_win += 1
+            elif any(k in mt for k in ("被告應給付", "准原告", "被告應將", "應連帶給付", "准予", "照准", "訴訟費用由被告負擔")):
+                full_win += 1
+            elif "駁回" in mt:
+                loss += 1
+            else:
+                other += 1
+
+        return {
+            "total_analyzed": total,
+            "full_win_count": full_win,
+            "partial_win_count": partial_win,
+            "loss_count": loss,
+            "other_count": other,
+            "full_win_pct": round(full_win / total * 100, 1),
+            "partial_win_pct": round(partial_win / total * 100, 1),
+            "loss_pct": round(loss / total * 100, 1),
+            "other_pct": round(other / total * 100, 1)
+        }
+    except Exception as e:
+        print(f"[outcome_analytics] 分析失敗: {e}")
+        return {
+            "total_analyzed": 0,
+            "error": str(e),
+            "full_win_pct": 0,
+            "partial_win_pct": 0,
+            "loss_pct": 0,
+            "other_pct": 0
+        }
     finally:
         if conn: conn.close()

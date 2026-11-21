@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
     currentSearchPayload = {};
     fetchJudgments(1);
     loadUsers();
+    initReadingTypography();
 });
 
 function toggleAdvancedSearch() {
@@ -90,6 +91,8 @@ function resetSearch() {
     document.getElementById('advContent').value = "";
     document.getElementById('advSizeMin').value = "";
     document.getElementById('advSizeMax').value = "";
+    const synCb = document.getElementById('synonymsExpandToggle');
+    if (synCb) synCb.checked = false;
 
     currentSearchPayload = {};
     
@@ -200,12 +203,12 @@ async function fetchJudgments(page = 1, refreshStats = true) {
     currentSearchPayload.sort_type = document.getElementById('tableSortSelect')?.value || "date_desc";
 
     try {
-        document.getElementById('results').innerHTML = '<p>⏳ 正在從資料庫撈取前 10 筆資料，請稍候...</p>';
+        document.getElementById('results').innerHTML = '<p>正在從資料庫檢索前 10 筆資料，請稍候...</p>';
         const sidebar = document.getElementById('facetSidebar');
         if (refreshStats) {
             sidebar.style.display = 'block';
             if (sidebar.innerHTML.trim() === '') {
-                sidebar.innerHTML = '<p style="padding: 15px; color: #666; font-weight: bold;">⏳ 全庫資料統計中...</p>';
+                sidebar.innerHTML = '<p style="padding: 15px; color: #666; font-weight: bold;">全庫資料統計中...</p>';
             } else {
                 sidebar.style.opacity = '0.5';   
             }
@@ -229,6 +232,8 @@ async function fetchJudgments(page = 1, refreshStats = true) {
         displayResults();
         
         if (refreshStats) {
+            cachedOutcomeAnalytics = null;
+            loadOutcomeAnalytics(currentSearchPayload);
             const statsResponse = await fetch('/api/judgments/stats', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -332,17 +337,64 @@ async function searchJudgments() {
         adv_no_start: advNoStart !== "" ? parseInt(advNoStart, 10) : null,
         adv_no_end: advNoEnd !== "" ? parseInt(advNoEnd, 10) : null,
         adv_size_min: advSizeMin !== "" ? parseFloat(advSizeMin) : null,
-        adv_size_max: advSizeMax !== "" ? parseFloat(advSizeMax) : null
+        adv_size_max: advSizeMax !== "" ? parseFloat(advSizeMax) : null,
+        synonyms_expand: document.getElementById('synonymsExpandToggle')?.checked || false
     };
+
+    // 發起新搜尋時重置跨分頁選取
+    selectedCaseIds.clear();
+    selectedCasesMap.clear();
 
     fetchJudgments(1);
     document.getElementById('sidePanel').style.display = "none"; 
+}
+
+// ==========================================
+// 全局跨分頁選取狀態管理
+// ==========================================
+const selectedCaseIds = new Set();
+const selectedCasesMap = new Map();
+
+function onCaseCheckboxChange(cb, id) {
+    if (cb.checked) {
+        selectedCaseIds.add(id);
+        const item = (typeof judgmentsData !== 'undefined' ? judgmentsData : []).find(j => j.id === id);
+        if (item) selectedCasesMap.set(id, item);
+    } else {
+        selectedCaseIds.delete(id);
+        selectedCasesMap.delete(id);
+    }
+    updateSelectAllCheckboxState();
+}
+
+function updateSelectAllCheckboxState() {
+    const selectAllCb = document.getElementById('selectAllCb') || document.querySelector('th input[type="checkbox"]');
+    if (!selectAllCb) return;
+    const cbs = document.querySelectorAll('.judgment-cb');
+    if (cbs.length === 0) {
+        selectAllCb.checked = false;
+        selectAllCb.indeterminate = false;
+        return;
+    }
+    const allChecked = Array.from(cbs).every(cb => cb.checked);
+    const anyChecked = Array.from(cbs).some(cb => cb.checked);
+    selectAllCb.checked = allChecked;
+    selectAllCb.indeterminate = !allChecked && anyChecked;
 }
 
 function toggleSelectAll(source) {
     const checkboxes = document.querySelectorAll('.judgment-cb');
     checkboxes.forEach(cb => {
         cb.checked = source.checked;
+        const id = cb.value;
+        if (source.checked) {
+            selectedCaseIds.add(id);
+            const item = (typeof judgmentsData !== 'undefined' ? judgmentsData : []).find(j => j.id === id);
+            if (item) selectedCasesMap.set(id, item);
+        } else {
+            selectedCaseIds.delete(id);
+            selectedCasesMap.delete(id);
+        }
     });
 }
 
@@ -398,9 +450,10 @@ function renderTableBody(data) {
             }
         }
 
+        const isChecked = selectedCaseIds.has(item.id);
         bodyHtml += `
             <tr>
-                <td style="text-align:center;"><input type="checkbox" class="judgment-cb" value="${item.id}"></td>
+                <td style="text-align:center;"><input type="checkbox" class="judgment-cb" value="${item.id}" ${isChecked ? 'checked' : ''} onchange="onCaseCheckboxChange(this, '${item.id}')"></td>
                 <td>${absoluteIndex}.<br>
                     <span class="fav-star" data-id="${item.id}" style="cursor:pointer; font-size:1.2em; color:${isFav(item.id) ? '#f59e0b' : '#94a3b8'};" onclick="toggleFav('${item.id}')" title="加入/移除收藏">${isFav(item.id) ? '★' : '☆'}</span>
                 </td>
@@ -413,6 +466,7 @@ function renderTableBody(data) {
             </tr>`;
     });
     tbody.innerHTML = bodyHtml;
+    updateSelectAllCheckboxState();
     renderPaginationUI(totalPages);
 }
 
@@ -453,6 +507,56 @@ function changePage(delta) {
     }
 }
 
+let cachedOutcomeAnalytics = null;
+
+async function loadOutcomeAnalytics(payload) {
+    const box = document.getElementById('outcomeAnalyticsBox');
+    if (!box) return;
+    try {
+        const res = await fetch('/api/judgments/outcome_analytics', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || data.total_analyzed === 0) {
+            box.style.display = 'none';
+            cachedOutcomeAnalytics = null;
+            return;
+        }
+        cachedOutcomeAnalytics = data;
+        box.style.display = 'flex';
+        const winEl = document.getElementById('outcomeFullWin');
+        const partEl = document.getElementById('outcomePartialWin');
+        const lossEl = document.getElementById('outcomeLoss');
+        const otherEl = document.getElementById('outcomeOther');
+        const textEl = document.getElementById('outcomeText');
+
+        if (winEl) {
+            winEl.style.width = data.full_win_pct + '%';
+            winEl.title = `原告勝訴: ${data.full_win_count} 筆 (${data.full_win_pct}%)`;
+        }
+        if (partEl) {
+            partEl.style.width = data.partial_win_pct + '%';
+            partEl.title = `部分勝訴: ${data.partial_win_count} 筆 (${data.partial_win_pct}%)`;
+        }
+        if (lossEl) {
+            lossEl.style.width = data.loss_pct + '%';
+            lossEl.title = `敗訴/駁回: ${data.loss_count} 筆 (${data.loss_pct}%)`;
+        }
+        if (otherEl) {
+            otherEl.style.width = data.other_pct + '%';
+            otherEl.title = `其他/程序: ${data.other_count} 筆 (${data.other_pct}%)`;
+        }
+        if (textEl) {
+            textEl.innerHTML = `勝訴 <strong>${data.full_win_pct}%</strong> | 部分勝 <strong>${data.partial_win_pct}%</strong> | 駁回 <strong>${data.loss_pct}%</strong> <span style="color:#94a3b8;">(${data.total_analyzed} 案大數據分析)</span>`;
+        }
+    } catch (e) {
+        console.warn('loadOutcomeAnalytics error:', e);
+    }
+}
+
 function displayResults() {
     if (isFavoritesMode) return;
     const resultsDiv = document.getElementById('results');
@@ -474,8 +578,36 @@ function displayResults() {
 
     const currentSortVal = currentSearchPayload.sort_type || "date_desc";
     const limitWarning = (typeof totalItems === 'number' && totalItems > 1000) ? '<span style="color:#e65100; font-size:0.9em; margin-left: 8px;">(系統僅開放瀏覽前 1000 筆)</span>' : '';
+    
+    let outcomeBarHtml = '';
+    if (cachedOutcomeAnalytics && cachedOutcomeAnalytics.total_analyzed > 0) {
+        outcomeBarHtml = `
+            <div id="outcomeAnalyticsBox" style="width: 100%; display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 6px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.82em;">
+                <span style="font-weight: 600; color: #334155; white-space: nowrap;">勝敗訴大數據傾向：</span>
+                <div style="flex: 1; height: 10px; background: #e2e8f0; border-radius: 5px; overflow: hidden; display: flex;" title="勝敗訴比例圖示">
+                    <div id="outcomeFullWin" style="background: #10b981; width: ${cachedOutcomeAnalytics.full_win_pct}%; transition: width 0.4s ease;" title="原告勝訴: ${cachedOutcomeAnalytics.full_win_count} 筆 (${cachedOutcomeAnalytics.full_win_pct}%)"></div>
+                    <div id="outcomePartialWin" style="background: #f59e0b; width: ${cachedOutcomeAnalytics.partial_win_pct}%; transition: width 0.4s ease;" title="部分勝訴: ${cachedOutcomeAnalytics.partial_win_count} 筆 (${cachedOutcomeAnalytics.partial_win_pct}%)"></div>
+                    <div id="outcomeLoss" style="background: #ef4444; width: ${cachedOutcomeAnalytics.loss_pct}%; transition: width 0.4s ease;" title="敗訴/駁回: ${cachedOutcomeAnalytics.loss_count} 筆 (${cachedOutcomeAnalytics.loss_pct}%)"></div>
+                    <div id="outcomeOther" style="background: #94a3b8; width: ${cachedOutcomeAnalytics.other_pct}%; transition: width 0.4s ease;" title="其他/程序: ${cachedOutcomeAnalytics.other_count} 筆 (${cachedOutcomeAnalytics.other_pct}%)"></div>
+                </div>
+                <div id="outcomeText" style="color: #475569; white-space: nowrap;">勝訴 <strong>${cachedOutcomeAnalytics.full_win_pct}%</strong> | 部分勝 <strong>${cachedOutcomeAnalytics.partial_win_pct}%</strong> | 駁回 <strong>${cachedOutcomeAnalytics.loss_pct}%</strong> <span style="color:#94a3b8;">(${cachedOutcomeAnalytics.total_analyzed} 案大數據分析)</span></div>
+            </div>`;
+    } else {
+        outcomeBarHtml = `
+            <div id="outcomeAnalyticsBox" style="width: 100%; display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 6px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.82em;">
+                <span style="font-weight: 600; color: #334155; white-space: nowrap;">勝敗訴大數據傾向：</span>
+                <div style="flex: 1; height: 10px; background: #e2e8f0; border-radius: 5px; overflow: hidden; display: flex;" title="勝敗訴比例圖示">
+                    <div id="outcomeFullWin" style="background: #10b981; width: 0%; transition: width 0.4s ease;" title="原告勝訴"></div>
+                    <div id="outcomePartialWin" style="background: #f59e0b; width: 0%; transition: width 0.4s ease;" title="部分勝訴"></div>
+                    <div id="outcomeLoss" style="background: #ef4444; width: 0%; transition: width 0.4s ease;" title="敗訴/駁回"></div>
+                    <div id="outcomeOther" style="background: #94a3b8; width: 0%; transition: width 0.4s ease;" title="其他/程序"></div>
+                </div>
+                <div id="outcomeText" style="color: #64748b; white-space: nowrap;">大數據分析中...</div>
+            </div>`;
+    }
+
     let html = `
-        <div class="table-toolbar">
+        <div class="table-toolbar" style="flex-wrap: wrap;">
             <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                 <span>共 <strong>${totalItems}</strong> 筆符合條件 ${limitWarning}</span>
                 <button type="button" class="btn-toggle" style="padding: 2px 8px; font-size: 0.82em; background: #ecfdf5; color: #047857; border-color: #a7f3d0; cursor: pointer;" onclick="exportSelectedCSV()" title="將目前勾選的案件匯出為 Excel CSV 總表">匯出勾選 CSV</button>
@@ -492,6 +624,7 @@ function displayResults() {
                     <option value="size_asc" ${currentSortVal === 'size_asc' ? 'selected' : ''}>全文大小 (小到大)</option>
                 </select>
             </div>
+            ${outcomeBarHtml}
         </div>`;
 
     html += `<table class="result-table">
@@ -609,14 +742,46 @@ function getCourtTierInfo(title) {
     return { tier: 1, label: "審級", badgeClass: "tier-1" };
 }
 
+// 從 JID 還原標準裁判案號與法院名稱
+function formatJidToTitle(jid) {
+    if (!jid) return "（未命名案件）";
+    const clean = decodeURIComponent(jid).trim();
+    const parts = clean.split(',');
+    if (parts.length < 4) return clean;
+    const courtName = getCourtName({ id: clean });
+    const yr = parts[1] || "";
+    const tp = parts[2] || "";
+    const no = parts[3] || "";
+    const date = parts[4] || "";
+    const docKind = (tp.includes('裁定') || /^(聲|抗|執|司票|救|保)/.test(tp)) ? '裁定' : (/^(訴|上|易|簡)/.test(tp) ? '判決' : '裁判');
+    let title = `${courtName} ${yr} 年度 ${tp} 字第 ${no} 號${docKind}`.replace(/\s+/g, ' ').trim();
+    if (date) {
+        title += ` (${formatROCDate(date)})`;
+    }
+    return title;
+}
+
 // 歷審裁判渲染器：支援「審級時序樹狀圖」與「傳統清單列表」切換
 function renderHistoryView(currentId) {
     const historyBox = document.getElementById('sideHistory');
     if (!historyBox) return;
 
-    if (!currentHistoryData || currentHistoryData.length === 0) {
+    // 前端雙重防禦過濾：排除「下一筆」、「最末筆」等分頁導覽按鈕
+    const validHistory = (currentHistoryData || []).filter(h => {
+        const t = String(h.title || '').trim();
+        const u = String(h.url || '').trim();
+        if (/^(下一筆|上一筆|第一筆|最末筆|回列表|回裁判列表|友善列印|回查詢結果)$/.test(t)) return false;
+        if (u.includes('ot=in')) return false;
+        return true;
+    });
+
+    if (validHistory.length === 0) {
         historyBox.innerHTML = "此案件查無其他歷審紀錄。";
         historyBox.style.display = "block";
+        const histBadge = document.getElementById('historyCountBadge');
+        if (histBadge) histBadge.style.display = "none";
+        const toggleBtn = document.getElementById('historyViewToggle');
+        if (toggleBtn) toggleBtn.style.display = "none";
         return;
     }
 
@@ -625,8 +790,13 @@ function renderHistoryView(currentId) {
     if (historyViewMode === 'timeline') {
         // 時序樹狀圖模式
         let tHtml = '<div class="history-timeline">';
-        currentHistoryData.forEach(h => {
-            const rawTitle = String(h.title || h.jid || h.url || "（未命名案件）");
+        validHistory.forEach(h => {
+            let rawTitle = String(h.title || '').trim();
+            // 若標題為空、為網址、或缺少案號資訊，由 JID 自動還原標準標題
+            if (!rawTitle || rawTitle.startsWith("http") || rawTitle.includes("data.aspx") || /^(下一筆|上一筆|第一筆|最末筆)/.test(rawTitle)) {
+                rawTitle = formatJidToTitle(h.jid || h.url);
+            }
+
             const dateMatch = rawTitle.match(/\((\d{2,3}\.\d{1,2}\.\d{1,2})\)/);
             const dateStr = dateMatch ? dateMatch[1] : '';
             const cleanTitle = rawTitle.replace(/\(\d{2,3}\.\d{1,2}\.\d{1,2}\)/, '').trim();
@@ -680,8 +850,12 @@ function renderHistoryView(currentId) {
     } else {
         // 清單列表模式
         let hHtml = "<strong>相關歷審裁判紀錄：</strong><ul>";
-        currentHistoryData.forEach(h => {
-            const label = escapeHtml(String(h.title || h.jid || h.url || "（未命名）"));
+        validHistory.forEach(h => {
+            let rawTitle = String(h.title || '').trim();
+            if (!rawTitle || rawTitle.startsWith("http") || rawTitle.includes("data.aspx") || /^(下一筆|上一筆|第一筆|最末筆)/.test(rawTitle)) {
+                rawTitle = formatJidToTitle(h.jid || h.url);
+            }
+            const label = escapeHtml(rawTitle || "（未命名）");
             const hJidClean = (h.jid || "").toLowerCase().trim();
             const isCurrent = hJidClean && (hJidClean === curIdClean || decodeURIComponent(hJidClean) === curIdClean);
 
@@ -982,6 +1156,12 @@ async function showFullContent(id, itemOverride = null, isFreshOpen = true) {
     historyBox.style.display = "none";
     loadingBox.style.display = "block";
 
+    // 清空並重設速覽小卡
+    const briefCard = document.getElementById('aiCaseBriefCard');
+    if (briefCard) { briefCard.style.display = 'none'; briefCard.innerHTML = ''; briefCard.dataset.loadedId = ''; }
+    const btnBrief = document.getElementById('btnCaseBrief');
+    if (btnBrief) btnBrief.style.background = '#f0fdf4';
+
     fetch('/api/scraper/get_history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -994,7 +1174,13 @@ async function showFullContent(id, itemOverride = null, isFreshOpen = true) {
         loadingBox.style.display = "none";
         renderLaws(data.laws);
 
-        currentHistoryData = data.history || [];
+        currentHistoryData = (data.history || []).filter(h => {
+            const t = String(h.title || '').trim();
+            const u = String(h.url || '').trim();
+            if (/^(下一筆|上一筆|第一筆|最末筆|回列表|回裁判列表|友善列印|回查詢結果)$/.test(t)) return false;
+            if (u.includes('ot=in')) return false;
+            return true;
+        });
         const histCount = currentHistoryData.length;
         if (histBadge) {
             if (histCount > 0) {
@@ -1247,6 +1433,11 @@ function resetHistoryPanel() {
     if (lawBadge) lawBadge.style.display = 'none';
     if (toggleBtn) toggleBtn.style.display = 'none';
     renderLaws([]);
+
+    const briefCard = document.getElementById('aiCaseBriefCard');
+    if (briefCard) { briefCard.style.display = 'none'; briefCard.innerHTML = ''; briefCard.dataset.loadedId = ''; }
+    const btnBrief = document.getElementById('btnCaseBrief');
+    if (btnBrief) btnBrief.style.background = '#f0fdf4';
 }
 
 // 支援鍵盤 Esc 關閉各類彈窗
@@ -1269,32 +1460,208 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // 渲染「相關法條」卡片（放在歷審下面）。沒有資料就整張卡片隱藏
+function isLawItem(l) {
+    if (!l) return false;
+    const text = String(l.text || l.title || '').trim();
+    const url = String(l.url || '').trim();
+    if (!text) return false;
+    if (url.includes('ty=JD') || url.includes('data.aspx?id=')) return false;
+    if (/(法院|判決|裁定|無歷審|歷審裁判|撤回上訴|字第.*號|繫屬法院|審理中)/.test(text)) return false;
+    return true;
+}
+
+function extractLawsFromContentText(content) {
+    if (!content) return [];
+    const regex = /((?:中華民國)?(?:刑法|民法|刑事訴訟法|民事訴訟法|行政訴訟法|強制執行法|家事事件法|勞動基準法|消費者保護法|組織犯罪防制條例|洗錢防制法|毒品危害防制條例|道路交通管理處罰條例|證券交易法|保險法|公司法|票據法|著作權法|商標法|專利法|個人資料保護法|國家賠償法|少年事件處理法|貪污治罪條例|槍砲彈藥刀械管制條例|政府採購法|破產法|土地法|公寓大廈管理條例|戶籍法|入出國及移民法|憲法訴訟法)\s*第\s*[0-9一二三四五六七八九十百千]+(?:\s*條之\s*[0-9一二三四五六七八九十]+|\s*條)(?:\s*第\s*[0-9一二三四五六七八九十]+\s*項)?(?:\s*第\s*[0-9一二三四五六七八九十]+\s*款)?)/g;
+    const matches = content.match(regex) || [];
+    const seen = new Set();
+    const out = [];
+    for (const m of matches) {
+        const clean = m.replace(/\s+/g, '').trim();
+        if (!clean || seen.has(clean)) continue;
+        seen.add(clean);
+        out.push({
+            text: clean,
+            url: `https://law.moj.gov.tw/LawClass/LawSearchContent.aspx?pcode=&kw=${encodeURIComponent(clean)}`
+        });
+    }
+    return out;
+}
+
 function renderLaws(laws) {
     const card = document.getElementById('lawCard');
     const box = document.getElementById('sideLaws');
     const lawBadge = document.getElementById('lawCountBadge');
     if (!card || !box) return;
 
-    if (!Array.isArray(laws) || laws.length === 0) {
-        card.style.display = 'none';
-        box.innerHTML = '';
+    // 嚴格過濾誤入的歷審裁判、案號或系統提示
+    let validLaws = Array.isArray(laws) ? laws.filter(isLawItem) : [];
+
+    // 若司法院未載入相關法條，自動由本案裁判書全文精準萃取援引法條
+    if (validLaws.length === 0 && currentDetailItem && currentDetailItem.content) {
+        validLaws = extractLawsFromContentText(currentDetailItem.content);
+    }
+
+    if (validLaws.length === 0) {
+        card.style.display = 'block';
+        box.innerHTML = '<div style="color:#94a3b8; font-size:0.88em; padding:4px 0;">此裁判內文未特別載明具體援引法條。</div>';
         if (lawBadge) lawBadge.style.display = 'none';
         return;
     }
 
     if (lawBadge) {
-        lawBadge.textContent = laws.length;
+        lawBadge.textContent = validLaws.length;
         lawBadge.style.display = 'inline-flex';
     }
 
-    box.innerHTML = '<ul>' + laws.map(l => {
-        const text = escapeHtml(String((l && l.text) || ''));
+    box.innerHTML = '<ul>' + validLaws.map(l => {
+        const rawText = String((l && l.text) || '').trim();
+        const text = escapeHtml(rawText);
+        const safeRaw = encodeURIComponent(rawText);
+        const searchBtn = `<button type="button" class="btn-toggle" style="font-size:0.75em; padding:1px 6px; margin-left:6px; background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; cursor:pointer;" onclick="searchByLawArticle('${safeRaw}')" title="以本條文反向檢索所有適用此法條之裁判">反向檢索</button>`;
         return (l && l.url)
-            ? `<li><a href="${escapeHtml(l.url)}" target="_blank" rel="noopener">${text}</a></li>`
-            : `<li>${text}</li>`;
+            ? `<li style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;"><a href="${escapeHtml(l.url)}" target="_blank" rel="noopener" style="flex:1; word-break:break-word;">${text}</a>${searchBtn}</li>`
+            : `<li style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;"><span style="flex:1; word-break:break-word;">${text}</span>${searchBtn}</li>`;
     }).join('') + '</ul>';
     card.style.display = 'block';
 }
+
+function searchByLawArticle(lawRaw) {
+    if (!lawRaw) return;
+    const cleanLaw = decodeURIComponent(lawRaw).trim();
+    // 擷取法規與條號，例如從 "刑法第276條第1項" 擷取 "刑法 第 276 條"
+    const match = cleanLaw.match(/^([^\d第]+(?:法|條例|細則)?)(?:第?\s*(\d+)\s*條)?/);
+    let term = cleanLaw;
+    if (match && match[1] && match[2]) {
+        term = `${match[1]} 第 ${match[2]} 條`;
+    }
+    const kwInput = document.getElementById('quickKeywordInput');
+    if (kwInput) {
+        kwInput.value = term;
+    }
+    const synToggle = document.getElementById('synonymsExpandToggle');
+    if (synToggle) {
+        synToggle.checked = false;
+    }
+    document.querySelector('.search-box')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    searchJudgments();
+}
+
+function formatBriefMarkdown(text) {
+    if (!text) return '';
+    let escaped = escapeHtml(text);
+    escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong style="color:#0f5132;">$1</strong>');
+    escaped = escaped.replace(/^\*\s+(.+)$/gm, '<li style="margin-left:18px;">$1</li>');
+    escaped = escaped.replace(/\n\n/g, '<div style="margin-top:6px;"></div>');
+    escaped = escaped.replace(/\n/g, '<br>');
+    return escaped;
+}
+
+async function toggleCaseBrief() {
+    const briefCard = document.getElementById('aiCaseBriefCard');
+    const btn = document.getElementById('btnCaseBrief');
+    if (!briefCard) {
+        alert("找不到速覽小卡元件！");
+        return;
+    }
+
+    if (!currentDetailItem) {
+        if (typeof currentSideId !== 'undefined' && currentSideId && Array.isArray(judgmentsData)) {
+            currentDetailItem = judgmentsData.find(j => j && j.id === currentSideId);
+        }
+    }
+    if (!currentDetailItem) {
+        alert("請先點選裁判書開啟全文後，再使用案件速覽小卡！");
+        return;
+    }
+
+    // 若當前案件已載入且正在顯示中，點擊則收合
+    if (briefCard.style.display !== 'none' && briefCard.dataset.loadedId === currentDetailItem.id) {
+        briefCard.style.display = 'none';
+        if (btn) btn.style.background = '#f0fdf4';
+        return;
+    }
+
+    briefCard.style.display = 'block';
+    if (btn) btn.style.background = '#dcfce7';
+    briefCard.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="display:inline-block; width:14px; height:14px; border:2px solid #16a34a; border-top-color:transparent; border-radius:50%; animation: spin 0.8s linear infinite;"></span>
+                <strong style="color:#15803d; font-size:1.05em;">AI 案件速覽小卡 (Case Brief)</strong>
+            </div>
+            <button type="button" class="btn-toggle" style="font-size:0.75em; padding:1px 6px;" onclick="document.getElementById('aiCaseBriefCard').style.display='none'">收起</button>
+        </div>
+        <div style="color:#475569; font-size:0.9em; padding:6px 0;">正在由 AI 解析本案主文結論、訴訟爭點、兩造主張與核心心證...</div>
+    `;
+    briefCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    try {
+        const payload = {
+            id: currentDetailItem.id,
+            title: currentDetailItem.title || '',
+            content: currentDetailItem.content || '',
+            main_text: currentDetailItem.main_text || '',
+            reason: currentDetailItem.reason || ''
+        };
+
+        const res = await fetch('/api/ai/case_brief', {
+            method: 'POST',
+            headers: (typeof apiHeaders === 'function') ? apiHeaders() : { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error("伺服器回應狀態異常 (" + res.status + ")");
+        const data = await res.json();
+        const briefText = data.brief || '無法產生速覽內容';
+        briefCard.dataset.loadedId = currentDetailItem.id;
+
+        const formattedHtml = formatBriefMarkdown(briefText);
+        briefCard.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid #bbf7d0; padding-bottom:6px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <strong style="color:#15803d; font-size:1.05em;">AI 案件速覽小卡 (Case Brief)</strong>
+                    <span style="font-size:0.75em; background:#dcfce7; color:#166534; padding:1px 6px; border-radius:4px; font-weight:bold;">${data.source === 'ai' ? '本機 LLM 生成' : '結構化萃取'}</span>
+                </div>
+                <button type="button" class="btn-toggle" style="font-size:0.75em; padding:1px 6px;" onclick="document.getElementById('aiCaseBriefCard').style.display='none'">收起</button>
+            </div>
+            <div style="line-height:1.65; color:#14532d;">${formattedHtml}</div>
+        `;
+    } catch (e) {
+        console.warn('API fetch failed, falling back to instant local extraction:', e);
+        const localBrief = generateLocalBrief(currentDetailItem);
+        briefCard.dataset.loadedId = currentDetailItem.id;
+        briefCard.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid #bbf7d0; padding-bottom:6px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <strong style="color:#15803d; font-size:1.05em;">AI 案件速覽小卡 (Case Brief)</strong>
+                    <span style="font-size:0.75em; background:#fef3c7; color:#92400e; padding:1px 6px; border-radius:4px; font-weight:bold;">即時結構化解析</span>
+                </div>
+                <button type="button" class="btn-toggle" style="font-size:0.75em; padding:1px 6px;" onclick="document.getElementById('aiCaseBriefCard').style.display='none'">收起</button>
+            </div>
+            <div style="line-height:1.65; color:#14532d;">${formatBriefMarkdown(localBrief)}</div>
+        `;
+    }
+}
+
+function generateLocalBrief(item) {
+    if (!item) return '';
+    const main = (item.main_text || '主文詳見裁判全文').trim();
+    const content = item.content || '';
+    let claims = '原告訴之聲明與請求主張';
+    const cMatch = content.match(/(?:原告主張|原告起訴主張|上訴人主張|聲請人主張)[：:\s]*([\s\S]{10,220}?)(?:被告抗辯|被上訴人|經查|本院查|理由)/);
+    if (cMatch) claims = cMatch[1].replace(/\s+/g, ' ').slice(0, 150) + '...';
+
+    let defense = '被告抗辯與答辯要旨';
+    const dMatch = content.match(/(?:被告抗辯|被告則以|被上訴人抗辯|相對人陳述)[：:\s]*([\s\S]{10,220}?)(?:經查|本院查|本院得心證|本院審酌|理由)/);
+    if (dMatch) defense = dMatch[1].replace(/\s+/g, ' ').slice(0, 150) + '...';
+
+    let reason = (item.reason || content).slice(0, 200).replace(/\s+/g, ' ') + '...';
+
+    return `**【一、核心主文結論】**\n${main}\n\n**【二、核心訴訟爭點】**\n本案主要聚焦於「${item.title || '權益爭執'}」之構成要件、責任歸屬與法律效果。\n\n**【三、兩造主張要領】**\n* 原告/上訴人：${claims}\n* 被告/被上訴人：${defense}\n\n**【四、法院核心心證】**\n${reason}`;
+}
+
+window.toggleCaseBrief = toggleCaseBrief;
 
 // ==========================================
 // 方向四：一鍵複製引述、實體辨識、AI爭點攻防快萃
@@ -1371,15 +1738,17 @@ function triggerAIArgumentAnalysis() {
         if (typeof onTaskModeChange === 'function') onTaskModeChange();
     }
 
-    // 自動勾選當前判決
+    // 自動勾選當前判決並寫入全域選取集合
     const cb = document.querySelector(`.judgment-cb[value="${currentDetailItem.id}"]`);
     if (cb) cb.checked = true;
+    selectedCaseIds.add(currentDetailItem.id);
+    selectedCasesMap.set(currentDetailItem.id, currentDetailItem);
 
-    // 自動填入提問並發送
+    // 自動填入提問並直通傳入 currentDetailItem 保證不中斷
     const input = document.getElementById('chatInput');
     if (input) {
         input.value = "請為我深入萃取本案的【原告/檢察官主張】、【被告抗辯要點】、【法院核心心證與採信理由】及【關鍵法令爭點】，並以條列與對照表格呈現。";
-        sendChatMessage();
+        sendChatMessage(currentDetailItem);
     }
 }
 
@@ -1460,7 +1829,48 @@ function renderCompareModal() {
     fillCol('A', compareCaseA, "案件 A");
     fillCol('B', compareCaseB, "案件 B");
 
+    const diffBox = document.getElementById('compareAiDiffBox');
+    if (diffBox) diffBox.style.display = 'none';
+
     modal.style.display = 'flex';
+}
+
+async function generateCompareDiffAI() {
+    if (!compareCaseA || !compareCaseB) {
+        alert("請確認左右兩側皆已載入比對案件！");
+        return;
+    }
+    const diffBox = document.getElementById('compareAiDiffBox');
+    const diffContent = document.getElementById('compareAiDiffContent');
+    if (!diffBox || !diffContent) return;
+
+    diffBox.style.display = 'block';
+    diffContent.textContent = "AI 正在深度比對兩審級裁判書的主文差異、爭點逆轉與心證演變，請稍候...";
+
+    try {
+        const titleA = `${getCourtName(compareCaseA)} ${compareCaseA.year || ''} 年度 ${compareCaseA.case_type || ''} 字第 ${compareCaseA.case_no || ''} 號`;
+        const titleB = `${getCourtName(compareCaseB)} ${compareCaseB.year || ''} 年度 ${compareCaseB.case_type || ''} 字第 ${compareCaseB.case_no || ''} 號`;
+
+        const res = await fetch('/api/ai/compare_diff', {
+            method: 'POST',
+            headers: apiHeaders(),
+            body: JSON.stringify({
+                id_a: compareCaseA.id,
+                title_a: titleA,
+                content_a: compareCaseA.content || '',
+                main_text_a: compareCaseA.main_text || '',
+                id_b: compareCaseB.id,
+                title_b: titleB,
+                content_b: compareCaseB.content || '',
+                main_text_b: compareCaseB.main_text || ''
+            })
+        });
+        if (!res.ok) throw new Error("AI 比對服務暫時無法回應");
+        const data = await res.json();
+        diffContent.innerHTML = formatBriefMarkdown(data.diff || '無比對內容');
+    } catch (e) {
+        diffContent.textContent = "比對失敗：" + e.message;
+    }
 }
 
 function swapCompareCases() {
@@ -1474,6 +1884,8 @@ function closeCompareModal(event) {
     if (event && event.target && event.target !== event.currentTarget) return;
     const modal = document.getElementById('compareModal');
     if (modal) modal.style.display = 'none';
+    const diffBox = document.getElementById('compareAiDiffBox');
+    if (diffBox) diffBox.style.display = 'none';
 }
 
 function printCompareView() {
@@ -1532,16 +1944,32 @@ function printCompareView() {
 // 方向五：多案件勾選批次打包匯出 (CSV / 卷宗彙編)
 // ==========================================
 async function getSelectedJudgments() {
-    const checkedBoxes = document.querySelectorAll('.judgment-cb:checked');
-    if (checkedBoxes.length === 0) {
+    let selectedIds = [];
+    if (selectedCaseIds && selectedCaseIds.size > 0) {
+        selectedIds = Array.from(selectedCaseIds);
+    } else {
+        const checkedBoxes = document.querySelectorAll('.judgment-cb:checked');
+        selectedIds = Array.from(checkedBoxes).map(cb => cb.value);
+    }
+
+    if (selectedIds.length === 0) {
         alert("請先在搜尋結果左側「勾選」想要匯出的判決書！");
         return [];
     }
-    const selectedIds = Array.from(checkedBoxes).map(cb => cb.value);
 
-    // 優先從目前記憶體的 judgmentsData 中取得
-    const localMatches = judgmentsData.filter(item => selectedIds.includes(item.id));
-    const missingIds = selectedIds.filter(id => !localMatches.some(item => item.id === id));
+    // 優先從記憶體與 selectedCasesMap 中取得
+    const localMatches = [];
+    const missingIds = [];
+
+    selectedIds.forEach(id => {
+        if (selectedCasesMap.has(id)) {
+            localMatches.push(selectedCasesMap.get(id));
+        } else {
+            const found = (typeof judgmentsData !== 'undefined' ? judgmentsData : []).find(item => item.id === id);
+            if (found) localMatches.push(found);
+            else missingIds.push(id);
+        }
+    });
 
     if (missingIds.length > 0) {
         try {
@@ -2068,6 +2496,25 @@ async function openJudgeAnalytics(judgeName) {
             throw new Error(errMsg);
         }
         const data = await res.json();
+
+        if (data.total_cases === 0) {
+            if (loading) loading.style.display = 'none';
+            if (body) {
+                body.style.display = 'block';
+                body.innerHTML = `
+                    <div style="padding: 40px 20px; text-align: center;">
+                        <h3 style="margin: 0 0 10px 0; color: #1e3a8a; font-size: 1.15em;">${escapeHtml(data.judge_name || judgeName)} 法官</h3>
+                        <p style="color: #64748b; font-size: 0.9em; max-width: 480px; margin: 0 auto 16px auto; line-height: 1.6;">
+                            ${escapeHtml(data.message || '本地資料庫中目前未檢索到該法官之承審判決。')}
+                        </p>
+                        <button type="button" class="btn btn-primary" onclick="closeJudgeAnalyticsModal(); searchByJudge('${escapeHtml(judgeName)}');" style="padding: 6px 16px; font-size: 0.88em; cursor: pointer;">
+                            於首頁搜尋此法官所有裁判
+                        </button>
+                    </div>
+                `;
+            }
+            return;
+        }
 
         // 綁定基本檔案
         document.getElementById('judgeProfileName').textContent = `${data.judge_name} 法官`;
@@ -2648,4 +3095,309 @@ function resetCitationCanvasView() {
             n.vy = 0;
         }
     });
+}
+
+// ==========================================
+// 判決內文閱讀字型與字級控制 (Font & Typography Controls)
+// ==========================================
+let currentReadingFontSize = 1.05; // rem
+let isSerifMode = false;
+
+function toggleReadingFont() {
+    isSerifMode = !isSerifMode;
+    const detailPanel = document.getElementById('sidePanel');
+    const btn = document.getElementById('btnToggleFontSerif');
+    if (detailPanel) {
+        detailPanel.classList.toggle('font-serif-mode', isSerifMode);
+    }
+    if (btn) {
+        btn.textContent = isSerifMode ? '黑體' : '明體';
+        btn.title = isSerifMode ? '切換回現代思源黑體' : '切換至典雅思源明體（宋體）閱讀';
+    }
+    try {
+        localStorage.setItem('judgment_reading_serif', isSerifMode ? '1' : '0');
+    } catch (_) {}
+}
+
+function changeReadingFontSize(delta) {
+    currentReadingFontSize = Math.min(1.45, Math.max(0.85, currentReadingFontSize + delta * 0.08));
+    const sideBody = document.getElementById('sideBody');
+    if (sideBody) {
+        sideBody.style.fontSize = `${currentReadingFontSize.toFixed(2)}rem`;
+    }
+    try {
+        localStorage.setItem('judgment_reading_fontsize', currentReadingFontSize.toFixed(2));
+    } catch (_) {}
+}
+
+function initReadingTypography() {
+    try {
+        const savedSerif = localStorage.getItem('judgment_reading_serif');
+        if (savedSerif === '1') {
+            toggleReadingFont();
+        }
+        const savedSize = localStorage.getItem('judgment_reading_fontsize');
+        if (savedSize && !isNaN(parseFloat(savedSize))) {
+            currentReadingFontSize = parseFloat(savedSize);
+            const sideBody = document.getElementById('sideBody');
+            if (sideBody) {
+                sideBody.style.fontSize = `${currentReadingFontSize.toFixed(2)}rem`;
+            }
+        }
+    } catch (_) {}
+}
+
+// ==========================================
+// 司法院裁判開放資料每日自動同步管理 (Daily Sync Modal & Actions)
+// ==========================================
+async function openSyncModal() {
+    const modal = document.getElementById('syncModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    await loadSyncStatus();
+}
+
+function closeSyncModal(event) {
+    if (event && event.target && event.target.id !== 'syncModal') return;
+    const modal = document.getElementById('syncModal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function loadSyncStatus() {
+    try {
+        const res = await fetch('/api/sync/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        const sched = data.scheduler || {};
+        
+        // 綁定狀態卡片
+        const statusBadge = document.getElementById('syncStatusBadge');
+        if (statusBadge) {
+            statusBadge.textContent = sched.is_running ? '運作中 (每日 03:00)' : '未啟動';
+            statusBadge.style.color = sched.is_running ? '#16a34a' : '#dc2626';
+        }
+        
+        const nextTimeEl = document.getElementById('syncNextRunTime');
+        if (nextTimeEl) {
+            nextTimeEl.textContent = sched.next_run_time || '明日 03:00:00';
+        }
+
+        const lastResEl = document.getElementById('syncLastResult');
+        const lastTimeEl = document.getElementById('syncLastTime');
+        if (sched.last_run_result) {
+            const r = sched.last_run_result;
+            if (lastResEl) {
+                lastResEl.textContent = r.success ? `成功更新 ${r.total_inserted || 0} 筆 (下架 ${r.total_removed || 0} 筆)` : `同步失敗 (${r.error || r.message || '異常'})`;
+                lastResEl.style.color = r.success ? '#16a34a' : '#dc2626';
+            }
+            if (lastTimeEl) {
+                lastTimeEl.textContent = sched.last_run_time || '';
+            }
+        }
+
+        // 綁定 API 帳號設定狀態
+        const cfgStatusEl = document.getElementById('syncConfigStatus');
+        if (cfgStatusEl) {
+            if (data.has_credentials) {
+                cfgStatusEl.textContent = `已配置 (帳號: ${data.configured_user})`;
+                cfgStatusEl.style.color = '#16a34a';
+            } else {
+                cfgStatusEl.textContent = '尚未設定帳密 (請於下方輸入儲存)';
+                cfgStatusEl.style.color = '#d97706';
+            }
+        }
+        const userInput = document.getElementById('apiUserInput');
+        if (userInput && data.configured_user && !userInput.value) {
+            userInput.placeholder = `目前帳號：${data.configured_user}`;
+        }
+
+        // 官方開放服務時段提示 (00:00~06:00)
+        const hoursBadge = document.getElementById('syncServiceHoursBadge');
+        if (hoursBadge) {
+            if (data.is_service_hours) {
+                hoursBadge.textContent = '官方服務時段中 (開放連線)';
+                hoursBadge.style.background = '#dcfce7';
+                hoursBadge.style.color = '#15803d';
+            } else {
+                hoursBadge.textContent = '非官方服務時段 (官方每日開放 00:00~06:00)';
+                hoursBadge.style.background = '#fef3c7';
+                hoursBadge.style.color = '#b45309';
+            }
+        }
+
+        // 渲染日誌表格 (7 欄位)
+        const tbody = document.getElementById('syncLogsTableBody');
+        if (!tbody) return;
+        const logs = data.recent_logs || [];
+        if (logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 12px;">尚無同步日誌紀錄</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = logs.map(l => {
+            const isSuccess = l.status === 'SUCCESS';
+            const isRunning = l.status === 'RUNNING';
+            const badgeColor = isSuccess ? '#16a34a' : (isRunning ? '#2563eb' : '#dc2626');
+            const badgeBg = isSuccess ? '#dcfce7' : (isRunning ? '#dbeafe' : '#fee2e2');
+            const startTimeStr = l.started_at ? new Date(l.started_at).toLocaleString() : '--';
+            const note = l.error_message || (isSuccess ? `更新入庫 ${l.total_inserted ?? 0} 筆，下架 ${l.total_removed ?? 0} 筆` : '--');
+
+            return `<tr>
+                <td style="padding: 6px 8px; font-weight: bold;">${escapeHtml(l.sync_date || '')}</td>
+                <td style="padding: 6px 8px;">
+                    <span style="background: ${badgeBg}; color: ${badgeColor}; font-weight: 600; padding: 2px 6px; border-radius: 4px; font-size: 0.85em;">
+                        ${escapeHtml(l.status || '')}
+                    </span>
+                </td>
+                <td style="padding: 6px 8px;">${l.total_downloaded ?? 0}</td>
+                <td style="padding: 6px 8px; font-weight: bold; color: #16a34a;">${l.total_inserted ?? 0}</td>
+                <td style="padding: 6px 8px; font-weight: bold; color: #dc2626;">${l.total_removed ?? 0}</td>
+                <td style="padding: 6px 8px; color: #64748b;">${escapeHtml(startTimeStr)}</td>
+                <td style="padding: 6px 8px; color: #475569; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(note)}">
+                    ${escapeHtml(note)}
+                </td>
+            </tr>`;
+        }).join('');
+
+    } catch (e) {
+        console.warn("載入同步狀態失敗:", e);
+    }
+}
+
+async function saveApiCredentials() {
+    const userInput = document.getElementById('apiUserInput');
+    const pwdInput = document.getElementById('apiPasswordInput');
+    const user = (userInput ? userInput.value : "").trim();
+    const password = (pwdInput ? pwdInput.value : "").trim();
+
+    if (!user || !password) {
+        alert("請輸入司法院開放平臺之帳號與密碼！");
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/sync/save_credentials', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user, password })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            alert(data.message || "司法院 API 帳號密碼已儲存！");
+            if (pwdInput) pwdInput.value = "";
+            await loadSyncStatus();
+        } else {
+            alert("儲存失敗：" + (data.detail || data.error || "未知錯誤"));
+        }
+    } catch (e) {
+        alert("儲存請求失敗: " + e.message);
+    }
+}
+
+async function testApiAuth() {
+    const userInput = document.getElementById('apiUserInput');
+    const pwdInput = document.getElementById('apiPasswordInput');
+    const user = (userInput ? userInput.value : "").trim();
+    const password = (pwdInput ? pwdInput.value : "").trim();
+
+    const notice = document.getElementById('syncRunningNotice');
+    if (notice) {
+        notice.textContent = "正在連線司法院 /api/Auth 驗證帳密...";
+        notice.style.display = "inline";
+    }
+
+    try {
+        const res = await fetch('/api/sync/test_auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user, password })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert("驗證成功！\n" + data.message + "\nToken 片段：" + (data.token_snippet || ""));
+            await loadSyncStatus();
+        } else {
+            alert("驗證未通過：\n" + (data.error || "連線或驗證失敗"));
+        }
+    } catch (e) {
+        alert("測試驗證失敗: " + e.message);
+    } finally {
+        if (notice) {
+            notice.textContent = "正在調閱異動清單並同步入庫中，請稍候...";
+            notice.style.display = "none";
+        }
+    }
+}
+
+async function triggerManualSync() {
+    const btn = document.getElementById('btnTriggerSync');
+    const notice = document.getElementById('syncRunningNotice');
+
+    if (btn) btn.disabled = true;
+    if (notice) {
+        notice.textContent = "正在調閱異動清單並同步入庫中，請稍候...";
+        notice.style.display = 'inline';
+    }
+
+    try {
+        const res = await fetch('/api/sync/trigger', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            alert(`同步完成！\n同步日期：${data.sync_date}\n涵蓋官方發布日：${(data.target_dates || []).join(', ') || '無'}\n異動裁判總數：${data.total_changed || 0} 筆\n入庫新增/更新：${data.total_inserted || 0} 筆\n遵規下架刪除：${data.total_removed || 0} 筆\n略過或查無內容：${data.total_skipped || 0} 筆\n耗時：${data.duration_seconds || 0} 秒`);
+        } else {
+            alert(`同步未成功：${data.error || data.message || '查無可用資料'}`);
+        }
+        await loadSyncStatus();
+
+    } catch (e) {
+        alert(`觸發同步請求失敗: ${e.message}`);
+    } finally {
+        if (btn) btn.disabled = false;
+        if (notice) notice.style.display = 'none';
+    }
+}
+
+async function uploadZipFile() {
+    const fileInput = document.getElementById('uploadZipInput');
+    const notice = document.getElementById('uploadRunningNotice');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        alert("請先選擇要上傳的 .zip 壓縮檔！");
+        return;
+    }
+
+    const file = fileInput.files[0];
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+        alert("僅支援 .zip 格式之裁判書壓縮檔！");
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    if (notice) notice.style.display = 'inline';
+
+    try {
+        const res = await fetch('/api/sync/upload_zip', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            alert(`壓縮檔匯入成功！\n檔案名稱：${data.filename}\n解析裁判數：${data.total_processed} 筆\n成功入庫數：${data.total_inserted} 筆`);
+            fileInput.value = '';
+            await loadSyncStatus();
+        } else {
+            alert(`壓縮檔解析入庫失敗：${data.detail || data.error || '未知錯誤'}`);
+        }
+    } catch (e) {
+        alert(`上傳失敗: ${e.message}`);
+    } finally {
+        if (notice) notice.style.display = 'none';
+    }
 }

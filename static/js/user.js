@@ -198,7 +198,7 @@ async function createNewFolder() {
     }
 }
 async function deleteFolderById(folderId, folderName) {
-    if (!confirm(`警告：確定要刪除資料夾「${folderName}」嗎？\n\n（注意：資料夾刪除後，裡面收藏的【所有判決書】也都會跟著被徹底刪除，且無法復原！）`)) {
+    if (!confirm(`確定要刪除資料夾「${folderName}」嗎？\n\n（刪除後，資料夾內的裁判書籤將自動移至「未分類」，您的收藏不會遺失。）`)) {
         return;
     }
 
@@ -210,7 +210,7 @@ async function deleteFolderById(folderId, folderName) {
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
-        alert(`資料夾「${folderName}」及其包含的所有案件已刪除！`);
+        alert(`資料夾「${folderName}」已刪除，原案件已移至未分類！`);
 
         // 重新載入使用者的資料夾清單
         await loadFolders();
@@ -236,14 +236,30 @@ function updateFolderSelect(selectedId = null) {
 function openFavModal(id) {
     if (!currentUser) { alert("請先在右上角選擇使用者"); return; }
     
-    const item = judgmentsData.find(j => j.id === id);
-    if (!item) return;
+    let item = (typeof judgmentsData !== 'undefined' && Array.isArray(judgmentsData))
+        ? judgmentsData.find(j => j.id === id)
+        : null;
+        
+    // 若在當前分頁列表中找不到，依序嘗試從當前詳情頁、比對案A/B尋找
+    if (!item && typeof currentDetailItem !== 'undefined' && currentDetailItem && currentDetailItem.id === id) {
+        item = currentDetailItem;
+    }
+    if (!item && typeof compareCaseA !== 'undefined' && compareCaseA && compareCaseA.id === id) {
+        item = compareCaseA;
+    }
+    if (!item && typeof compareCaseB !== 'undefined' && compareCaseB && compareCaseB.id === id) {
+        item = compareCaseB;
+    }
+    if (!item) {
+        item = { id: id };
+    }
 
-    const idParts = item.id.split(',');
+    const idParts = (item.id || id).split(',');
     const yr = item.year || idParts[1] || "";
     const tp = item.case_type || idParts[2] || "";
     const no = item.case_no || idParts[3] || "";
-    const title = `${getCourtName(item)} ${yr} 年度 ${tp} 字第 ${no} 號`;
+    const courtName = typeof getCourtName === 'function' ? getCourtName(item) : (idParts[0] || "");
+    const title = `${courtName} ${yr} 年度 ${tp} 字第 ${no} 號`;
 
     document.getElementById('favJudgmentId').value = id;
     document.getElementById('favTitleDisplay').value = title;
@@ -255,7 +271,7 @@ function openFavModal(id) {
     document.getElementById('btnRemoveFav').style.display = isEditing ? 'block' : 'none';
 
     if (isEditing) {
-        const favData = favMap[id];
+        const favData = favMap[id] || {};
         document.getElementById('favFolderSelect').value = favData.folder_id || "";
         document.getElementById('favNoteInput').value = favData.note || "";
     } else {
@@ -327,7 +343,7 @@ function enterFavorites() {
 
 async function showFavorites(filterFolderId = 'ALL') {
     const resultsDiv = document.getElementById('results');
-    resultsDiv.innerHTML = '<p>⏳ 載入收藏中...</p>';
+    resultsDiv.innerHTML = '<p>載入收藏中...</p>';
     try {
         const favRes = await fetch('/api/favorites', { headers: apiHeaders() });
         const favListRaw = (await favRes.json()).data || [];

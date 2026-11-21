@@ -40,16 +40,32 @@
 }
 
 /* ==========================================================================
-   1. 基礎樣式 (Base)
+   1. 基礎樣式 (Base) 與現代字型系統 (Modern Typography)
    ========================================================================== */
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "微軟正黑體", "Microsoft JhengHei", Arial, sans-serif;
+    font-family: 'Inter', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang TC", "Microsoft JhengHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     background-color: var(--bg-page);
     color: var(--text-main);
     max-width: 96%;
     margin: 15px auto 40px auto;
     line-height: 1.6;
+    letter-spacing: -0.01em;
     transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* 全域表單元素字型繼承（解決 input / button / select 預設字型生硬問題） */
+input, button, select, textarea {
+    font-family: inherit;
+    font-feature-settings: inherit;
+}
+
+/* 數據、裁判字號、日期與金錢垂直對齊 (Tabular Numbers) */
+table, .result-table, .adv-table, .stat-badge, .kpi-num, .judge-kpi-card, .compensation-stat-card {
+    font-variant-numeric: tabular-nums;
 }
 
 /* 現代頂部導航列 (Modern Top App Bar) */
@@ -558,11 +574,32 @@ body {
 
 .side-judgment-body {
     white-space: pre-wrap;
-    font-size: 1.05em;
-    line-height: 1.85;
+    font-size: 1.05rem;
+    line-height: 1.88;
     color: var(--text-main);
     margin-top: 12px;
-    letter-spacing: 0.2px;
+    letter-spacing: 0.025em;
+    font-weight: 400;
+    transition: font-size 0.15s ease, line-height 0.15s ease;
+}
+
+/* 典雅法學明體/宋體閱讀模式 (思源明體 Noto Serif TC) */
+.font-serif-mode .side-judgment-body,
+.font-serif-mode .prev-modal-body,
+.font-serif-mode .compare-case-body {
+    font-family: 'Noto Serif TC', "Songti TC", "Noto Serif CJK TC", "Source Han Serif TC", "PMingLiU", serif;
+    font-weight: 400;
+    line-height: 1.95;
+    letter-spacing: 0.035em;
+}
+
+.reading-typography-group button {
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.reading-typography-group button:hover {
+    background: #e2e8f0;
 }
 
 .close-panel-btn {
@@ -1973,4 +2010,9 @@ mark.highlight-mark {
     font-size: 0.8em;
     color: #64748b;
     margin-top: 6px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }

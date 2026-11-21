@@ -5,8 +5,12 @@
     <meta name="google" content="notranslate">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>裁判書搜尋與歷審查詢系統</title>
+    <!-- 載入現代旗艦字型：Inter (英文/數字/UI) + Noto Sans TC (思源黑體) + Noto Serif TC (思源明體) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;600;700&family=Noto+Serif+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- 載入外部 CSS -->
-    <link rel="stylesheet" href="./static/css/style.css?v=17">
+    <link rel="stylesheet" href="./static/css/style.css?v=22">
     <link rel="icon" type="image/png" href="./static/favicon.png">
 </head>
 <body class="notranslate" translate="no">
@@ -15,11 +19,16 @@
     <header class="app-top-bar">
         <div class="brand-group">
             <div>
-                <h1 class="brand-title">裁判智檢 <span class="brand-badge">Judicial Analytics</span></h1>
+                <h1 class="brand-title">裁判書查詢系統 <span class="brand-badge">Judicial Analytics</span></h1>
                 <p class="brand-subtitle">裁判書智慧檢索 · 歷審脈絡 · 心證畫像與行情分析系統</p>
             </div>
         </div>
         <div class="header-controls">
+            <!-- 司法院每日同步排程入口 -->
+            <button class="btn-toggle" type="button" onclick="openSyncModal()" title="司法院裁判書開放資料每日自動同步管理" style="background: rgba(255, 255, 255, 0.1); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.2); padding: 5px 12px; font-size: 0.85em; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s;">
+                資料庫每日同步
+            </button>
+
             <!-- 使用者身分管理 -->
             <div class="user-capsule">
                 <span class="control-label">使用者：</span>
@@ -37,7 +46,8 @@
     <div class="search-box">
         <div class="basic-search-row">
             <select id="courtInput" style="width: 280px;"><option value="">全部法院</option></select>
-            <input type="text" id="quickKeywordInput" placeholder="全文或案號快速檢索 (多個關鍵字以空格分開)..." style="flex: 1; min-width: 220px;">
+            <input type="text" id="quickKeywordInput" placeholder="全文或案號快速檢索 (多個關鍵字以空格分開)..." style="flex: 1; min-width: 200px;">
+            <label style="display: flex; align-items: center; gap: 4px; font-size: 0.82em; color: #334155; cursor: pointer; white-space: nowrap; user-select: none; margin: 0 4px;" title="自動為車禍、借錢、離婚、租屋、遺產、毒品等生活詞延伸關聯法律術語"><input type="checkbox" id="synonymsExpandToggle"> 同義詞擴展</label>
             <button class="btn-primary" onclick="searchJudgments()">開始搜尋</button>
             <button class="btn-toggle" type="button" onclick="toggleAdvancedSearch()"><span id="toggleText">展開進階搜尋</span></button>
             <button class="btn-reset" type="button" onclick="resetSearch()">重設</button>
@@ -161,10 +171,17 @@
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; padding: 8px 12px; background: var(--adv-bg); border: 1px solid var(--adv-border); border-radius: var(--radius-sm);">
                         <div id="sideMeta" style="color: var(--text-muted); font-size: 0.88em;"></div>
                         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                            <span style="font-size: 0.82em; color: var(--text-light);">選取文字後按<b>空白鍵</b>標註</span>
+                            <!-- 閱讀排版與字型控制器 -->
+                            <div class="reading-typography-group" style="display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; padding-right: 8px; border-right: 1px solid var(--adv-border);">
+                                <button type="button" class="btn-toggle" id="btnToggleFontSerif" onclick="toggleReadingFont()" title="在現代思源黑體與典雅思源明體（宋體）間切換" style="padding: 2px 7px; font-size: 0.82em;">明體</button>
+                                <button type="button" class="btn-toggle" onclick="changeReadingFontSize(-1)" title="縮小裁判內文字級" style="padding: 2px 6px; font-size: 0.82em; font-weight: 600;">A-</button>
+                                <button type="button" class="btn-toggle" onclick="changeReadingFontSize(1)" title="放大裁判內文字級" style="padding: 2px 6px; font-size: 0.82em; font-weight: 600;">A+</button>
+                            </div>
+                            <span style="font-size: 0.82em; color: var(--text-light);">反白後按<b>空白鍵</b>標註</span>
                             <button class="btn-toggle" style="padding: 2px 6px; font-size: 0.82em;" onclick="clearAllHighlights()">清除註記</button>
                             <button class="btn-toggle" id="btnToggleEntities" style="padding: 2px 7px; font-size: 0.82em; background: #fefce8; color: #854d0e; border-color: #fef08a;" onclick="toggleEntityHighlights()" title="智慧標註內文之爭議金額、關鍵日期與律師辯護人">實體辨識</button>
                             <button class="btn-toggle" style="padding: 2px 7px; font-size: 0.82em; background: #fdf2f8; color: #9d174d; border-color: #fbcfe8; font-weight: 500;" onclick="triggerAIArgumentAnalysis()" title="AI 自動整理本案【原告主張、被告抗辯、法院心證】爭點攻防表">爭點攻防快萃</button>
+                            <button class="btn-toggle" id="btnCaseBrief" style="padding: 2px 7px; font-size: 0.82em; background: #f0fdf4; color: #166534; border-color: #bbf7d0; font-weight: 600;" onclick="toggleCaseBrief()" title="一鍵產出本案核心主文結論、訴訟爭點、兩造主張與法院心證速覽小卡">案件速覽小卡</button>
                             <button class="btn-toggle" style="padding: 2px 8px; font-size: 0.82em; background: #faf5ff; color: #6b21a8; border-color: #e9d5ff; font-weight: 500;" onclick="openCitationGraphModal()" title="視覺化呈現本案引用之憲法判決、最高法院先例、歷審審級與關鍵法條">引用網絡圖</button>
                             <button class="btn-toggle" id="btnSideCompensation" style="padding: 2px 8px; font-size: 0.82em; background: #ecfdf5; color: #047857; border-color: #a7f3d0; font-weight: 500;" onclick="openCompensationModalFromCurrent()" title="分析此類型民事損害賠償與慰撫金之全台判賠行情落點與分佈">判賠行情分析</button>
                             <button class="btn-toggle" style="padding: 2px 8px; font-size: 0.82em; background: #eef2ff; color: #1e40af; border-color: #bfdbfe; font-weight: 500;" onclick="exportCaseReport()" title="列印或另存為完整案件研究報告 PDF">匯出報告</button>
@@ -175,6 +192,9 @@
                     <div id="sideCompensationBanner" style="display:none; margin-bottom: 12px; padding: 10px 14px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px;"></div>
 
                     <div id="sideJudges" class="judge-badge-box" style="display:none; margin-bottom: 10px;"></div>
+
+                    <!-- AI 案件速覽小卡 (Case Brief Card) -->
+                    <div id="aiCaseBriefCard" style="display:none; margin-bottom: 12px; padding: 14px 18px; background: #f0fdf4; border: 1px solid #bbf7d0; border-left: 4px solid #16a34a; border-radius: 6px; font-size: 0.9em; line-height: 1.6; color: #166534;"></div>
 
                     <div id="sideBody" class="side-judgment-body"></div>
                 </div>
@@ -345,10 +365,20 @@
                     <span style="font-size: 0.82em; color: #64748b; background: #f1f5f9; padding: 2px 8px; border-radius: 4px;">Side-by-Side Compare</span>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center;">
+                    <button type="button" class="btn-toggle" onclick="generateCompareDiffAI()" style="padding: 3px 10px; font-size: 0.84em; background: #fdf2f8; color: #9d174d; border-color: #fbcfe8; font-weight: 600;" title="AI 自動比對兩案主文差異、翻轉爭點與上級審心證變化">AI 歷審異動分析</button>
                     <button type="button" class="btn-toggle" onclick="swapCompareCases()" title="左右案件對調位置" style="padding: 3px 10px; font-size: 0.84em;">左右互換</button>
                     <button type="button" class="btn-toggle" onclick="printCompareView()" title="列印或另存對照表" style="padding: 3px 10px; font-size: 0.84em; background: #e0f2fe; color: #0369a1; border-color: #bae6fd;">列印對照</button>
                     <span class="modal-close" onclick="closeCompareModal()" style="cursor: pointer; font-size: 1.3em; margin-left: 10px;">✕</span>
                 </div>
+            </div>
+
+            <!-- AI 歷審異動與心證翻轉智慧分析視窗 -->
+            <div id="compareAiDiffBox" style="display:none; margin: 10px 0; padding: 12px 16px; background: #fff1f2; border: 1px solid #fecdd3; border-left: 4px solid #e11d48; border-radius: 6px; font-size: 0.88em; line-height: 1.6; color: #881337;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <strong style="color: #9f1239;">AI 歷審異動與心證翻轉智慧分析</strong>
+                    <span onclick="document.getElementById('compareAiDiffBox').style.display='none'" style="cursor:pointer; color:#9f1239; font-weight:bold;">✕</span>
+                </div>
+                <div id="compareAiDiffContent" style="white-space: pre-wrap;"></div>
             </div>
 
             <!-- 雙欄對比主容器 -->
@@ -587,10 +617,95 @@
         </div>
     </div>
 
+    <!-- 司法院裁判資料庫同步排程彈跳視窗 (Daily Judicial API Sync Modal) -->
+    <div id="syncModal" class="modal-overlay" style="display: none;" onclick="closeSyncModal(event)">
+        <div class="modal-content" style="max-width: 720px; max-height: 85vh; overflow-y: auto;" onclick="event.stopPropagation()">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <h3 style="margin: 0; color: #1e3a8a; font-size: 1.2em;">司法院裁判書開放 API 每日異動同步管理</h3>
+                    <span style="font-size: 0.82em; color: #64748b; background: #f1f5f9; padding: 2px 8px; border-radius: 4px;">JList & JDoc API</span>
+                </div>
+                <button type="button" class="close-panel-btn" onclick="closeSyncModal()">&times;</button>
+            </div>
+
+            <!-- 排程運行狀態卡片 -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 18px;">
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">
+                    <div style="font-size: 0.82em; color: #64748b;">自動排程狀態</div>
+                    <div id="syncStatusBadge" style="font-size: 1.05em; font-weight: bold; color: #16a34a; margin-top: 4px;">運作中 (每日 03:00)</div>
+                    <div style="font-size: 0.75em; color: #94a3b8; margin-top: 2px;">自動抓取 7 日前異動清單</div>
+                </div>
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">
+                    <div style="font-size: 0.82em; color: #64748b;">下次預定同步時間</div>
+                    <div id="syncNextRunTime" style="font-size: 1.05em; font-weight: bold; color: #2563eb; margin-top: 4px;">明日 03:00:00</div>
+                    <div style="font-size: 0.75em; color: #94a3b8; margin-top: 2px;">於官方開放時段 (00:00~06:00) 執行</div>
+                </div>
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">
+                    <div style="font-size: 0.82em; color: #64748b;">上次同步成果</div>
+                    <div id="syncLastResult" style="font-size: 0.95em; font-weight: bold; color: #334155; margin-top: 4px;">--</div>
+                    <div id="syncLastTime" style="font-size: 0.75em; color: #94a3b8; margin-top: 2px;">--</div>
+                </div>
+            </div>
+
+            <!-- 司法院開放平臺帳號設定 (API Credentials) -->
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 18px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-weight: bold; color: #1e293b; font-size: 0.95em;">司法院資料開放平臺 API 帳號設定</span>
+                    <span id="syncConfigStatus" style="font-size: 0.82em; color: #64748b;">檢查中...</span>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                    <input type="text" id="apiUserInput" placeholder="平臺帳號 (User)" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9em; flex: 1; min-width: 140px;">
+                    <input type="password" id="apiPasswordInput" placeholder="平臺密碼 (Password)" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.9em; flex: 1; min-width: 140px;">
+                    <button type="button" class="btn-primary" onclick="saveApiCredentials()" style="padding: 6px 14px; font-size: 0.88em;">儲存設定</button>
+                    <button type="button" class="btn-secondary" onclick="testApiAuth()" style="padding: 6px 12px; font-size: 0.88em;">測試驗證</button>
+                </div>
+                <div style="font-size: 0.78em; color: #64748b; margin-top: 6px;">帳號用於向 <code>/api/Auth</code> 取得 6 小時有效之認證 Token，以合法呼叫裁判書異動清單與內文。</div>
+            </div>
+
+            <!-- 手動即時同步控制區塊 -->
+            <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 14px 16px; margin-bottom: 18px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-weight: bold; color: #1e40af; font-size: 0.95em;">手動即時觸發異動清單同步</span>
+                    <span id="syncServiceHoursBadge" style="font-size: 0.78em; padding: 2px 6px; border-radius: 4px; background: #dbeafe; color: #1e40af;">服務時段: 00:00~06:00</span>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                    <button type="button" id="btnTriggerSync" class="btn-primary" onclick="triggerManualSync()" style="padding: 6px 16px; font-size: 0.88em;">立即呼叫 API 同步異動清單</button>
+                    <span id="syncRunningNotice" style="display:none; color: #2563eb; font-size: 0.86em; font-weight: bold;">正在調閱異動清單並同步入庫中，請稍候...</span>
+                </div>
+                <div style="font-size: 0.78em; color: #64748b; margin-top: 6px;">
+                    系統將自動執行：1. 登入取得 Token ➔ 2. 獲取 /api/JList 異動清單 ➔ 3. 呼叫 /api/JDoc 更新裁判內文與主文 ➔ 4. 若案件經司法院下架將自動依規從資料庫刪除。
+                </div>
+            </div>
+
+            <!-- 最近同步記錄歷史 -->
+            <div>
+                <div style="font-weight: bold; color: #1e293b; font-size: 0.95em; margin-bottom: 8px;">最近同步紀錄（Sync History）</div>
+                <div style="overflow-x: auto;">
+                    <table class="result-table" style="font-size: 0.84em; width: 100%;">
+                        <thead>
+                            <tr style="background: #f1f5f9; color: #334155;">
+                                <th style="padding: 6px 8px;">日期</th>
+                                <th style="padding: 6px 8px;">狀態</th>
+                                <th style="padding: 6px 8px;">異動案件</th>
+                                <th style="padding: 6px 8px;">更新入庫</th>
+                                <th style="padding: 6px 8px;">下架移除</th>
+                                <th style="padding: 6px 8px;">開始時間</th>
+                                <th style="padding: 6px 8px;">詳細備註</th>
+                            </tr>
+                        </thead>
+                        <tbody id="syncLogsTableBody">
+                            <tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 12px;">載入中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 依序載入模組化 JS 檔案 -->
-    <script src="./static/js/globals.js?v=17"></script>
-    <script src="./static/js/user.js?v=17"></script>
-    <script src="./static/js/app.js?v=17"></script>
-    <script src="./static/js/highlight.js?v=17"></script>
-    <script src="./static/js/chat.js?v=17"></script></body>
+    <script src="./static/js/globals.js?v=22"></script>
+    <script src="./static/js/user.js?v=22"></script>
+    <script src="./static/js/app.js?v=22"></script>
+    <script src="./static/js/highlight.js?v=22"></script>
+    <script src="./static/js/chat.js?v=22"></script></body>
 </html>

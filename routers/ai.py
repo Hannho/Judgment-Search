@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import re
 from typing import Optional
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -22,6 +23,7 @@ MODEL_PATH = os.getenv(
 )
 
 _llm = None
+_llm_lock = asyncio.Lock()
 
 def get_llm():
     global _llm
@@ -250,10 +252,11 @@ async def ask_ai_multiple(query: MultiQAQuery):
             ])
             
             direct_chain = direct_prompt | llm
-            final_res = await direct_chain.ainvoke({
-                "context": single_doc,
-                "question": query.question
-            })
+            async with _llm_lock:
+                final_res = await direct_chain.ainvoke({
+                    "context": single_doc,
+                    "question": query.question
+                })
             
             # 若仍輸出空字串，提供防呆回傳
             output_text = final_res.content.strip()
@@ -283,34 +286,34 @@ async def ask_ai_multiple(query: MultiQAQuery):
             map_chain = generic_map_prompt | llm
             reduce_chain = generic_reduce_prompt | llm
 
-        # Map 階段：並行非同步抽取各案重點
-        print(f"[AI Info] 正在並行進行 {len(valid_cases)} 篇裁判書重點萃取...")
-        async def _extract_single(idx, text):
-            clean_case_text = text[:3500]
+        # Map 階段：循序抽取各案重點，避免 llama.cpp C++ 底層指標競爭當機
+        print(f"[AI Info] 正在循序進行 {len(valid_cases)} 篇裁判書重點萃取...")
+        extracted_summaries = []
+        for i, c in enumerate(valid_cases):
+            clean_case_text = c[:3500]
             try:
-                res = await map_chain.ainvoke({"single_case_text": clean_case_text})
-                return f"=== 【案件 {idx+1} 摘要】 ===\n{res.content.strip()}\n"
+                async with _llm_lock:
+                    res = await map_chain.ainvoke({"single_case_text": clean_case_text})
+                extracted_summaries.append(f"=== 【案件 {i+1} 摘要】 ===\n{res.content.strip()}\n")
             except Exception as e:
-                return f"=== 【案件 {idx+1} 摘要】 ===\n（此案件抽取失敗：{str(e)}）\n"
-
-        tasks = [_extract_single(i, c) for i, c in enumerate(valid_cases)]
-        extracted_summaries = await asyncio.gather(*tasks)
+                extracted_summaries.append(f"=== 【案件 {i+1} 摘要】 ===\n（此案件抽取失敗：{str(e)}）\n")
 
         combined_context = "\n".join(extracted_summaries)
         print("[AI Info] 所有案件萃取完成，正在執行 Reduce 跨案比對彙整...")
 
         # Reduce 階段：跨案件比對與統整
-        if mode == "custom" and query.custom_instruction and query.custom_instruction.strip():
-            final_response = await reduce_chain.ainvoke({
-                "context": combined_context,
-                "instruction": query.custom_instruction.strip(),
-                "input": query.question
-            })
-        else:
-            final_response = await reduce_chain.ainvoke({
-                "context": combined_context,
-                "input": query.question
-            })
+        async with _llm_lock:
+            if mode == "custom" and query.custom_instruction and query.custom_instruction.strip():
+                final_response = await reduce_chain.ainvoke({
+                    "context": combined_context,
+                    "instruction": query.custom_instruction.strip(),
+                    "input": query.question
+                })
+            else:
+                final_response = await reduce_chain.ainvoke({
+                    "context": combined_context,
+                    "input": query.question
+                })
 
         return {"answer": final_response.content}
 
@@ -351,15 +354,17 @@ async def ask_ai_stream(query: MultiQAQuery):
             ])
             direct_chain = direct_prompt | llm
             try:
-                async for chunk in direct_chain.astream({"context": single_doc, "question": query.question}):
-                    token_text = chunk.content if hasattr(chunk, 'content') else str(chunk)
-                    if token_text:
-                        yield f"data: {json.dumps({'type': 'token', 'text': token_text}, ensure_ascii=False)}\n\n"
+                async with _llm_lock:
+                    async for chunk in direct_chain.astream({"context": single_doc, "question": query.question}):
+                        token_text = chunk.content if hasattr(chunk, 'content') else str(chunk)
+                        if token_text:
+                            yield f"data: {json.dumps({'type': 'token', 'text': token_text}, ensure_ascii=False)}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
             except Exception:
                 try:
-                    res = await direct_chain.ainvoke({"context": single_doc, "question": query.question})
+                    async with _llm_lock:
+                        res = await direct_chain.ainvoke({"context": single_doc, "question": query.question})
                     yield f"data: {json.dumps({'type': 'token', 'text': res.content.strip()}, ensure_ascii=False)}\n\n"
                     yield f"data: {json.dumps({'type': 'done'})}\n\n"
                     return
@@ -367,9 +372,7 @@ async def ask_ai_stream(query: MultiQAQuery):
                     yield f"data: {json.dumps({'type': 'error', 'text': f'生成失敗：{str(err)}'}, ensure_ascii=False)}\n\n"
                     return
 
-        # 情境 B：多篇案件並行 Map-Reduce
-        yield f"data: {json.dumps({'type': 'status', 'text': f'正在並行萃取 {len(valid_cases)} 篇裁判書重點與理由...'}, ensure_ascii=False)}\n\n"
-
+        # 情境 B：多篇案件依序 Map-Reduce（即時回報進度）
         if mode == "issues":
             map_chain = issues_map_prompt | llm
             reduce_chain = issues_reduce_prompt | llm
@@ -386,16 +389,17 @@ async def ask_ai_stream(query: MultiQAQuery):
             map_chain = generic_map_prompt | llm
             reduce_chain = generic_reduce_prompt | llm
 
-        async def _extract_case(idx, text):
-            clean_case_text = text[:3500]
+        extracted_summaries = []
+        for i, c in enumerate(valid_cases):
+            yield f"data: {json.dumps({'type': 'status', 'text': f'正在萃取第 {i+1}/{len(valid_cases)} 篇裁判書重點與爭點...'}, ensure_ascii=False)}\n\n"
+            clean_case_text = c[:3500]
             try:
-                res = await map_chain.ainvoke({"single_case_text": clean_case_text})
-                return f"=== 【案件 {idx+1} 摘要】 ===\n{res.content.strip()}\n"
+                async with _llm_lock:
+                    res = await map_chain.ainvoke({"single_case_text": clean_case_text})
+                extracted_summaries.append(f"=== 【案件 {i+1} 摘要】 ===\n{res.content.strip()}\n")
             except Exception as e:
-                return f"=== 【案件 {idx+1} 摘要】 ===\n（此案件抽取失敗：{str(e)}）\n"
+                extracted_summaries.append(f"=== 【案件 {i+1} 摘要】 ===\n（此案件抽取失敗：{str(e)}）\n")
 
-        tasks = [_extract_case(i, c) for i, c in enumerate(valid_cases)]
-        extracted_summaries = await asyncio.gather(*tasks)
         combined_context = "\n".join(extracted_summaries)
 
         yield f"data: {json.dumps({'type': 'status', 'text': '各案重點萃取完成，正在生成跨案綜合比對報告...'}, ensure_ascii=False)}\n\n"
@@ -408,17 +412,175 @@ async def ask_ai_stream(query: MultiQAQuery):
             reduce_inputs["instruction"] = query.custom_instruction.strip()
 
         try:
-            async for chunk in reduce_chain.astream(reduce_inputs):
-                token_text = chunk.content if hasattr(chunk, 'content') else str(chunk)
-                if token_text:
-                    yield f"data: {json.dumps({'type': 'token', 'text': token_text}, ensure_ascii=False)}\n\n"
+            async with _llm_lock:
+                async for chunk in reduce_chain.astream(reduce_inputs):
+                    token_text = chunk.content if hasattr(chunk, 'content') else str(chunk)
+                    if token_text:
+                        yield f"data: {json.dumps({'type': 'token', 'text': token_text}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
         except Exception:
             try:
-                final_res = await reduce_chain.ainvoke(reduce_inputs)
+                async with _llm_lock:
+                    final_res = await reduce_chain.ainvoke(reduce_inputs)
                 yield f"data: {json.dumps({'type': 'token', 'text': final_res.content.strip()}, ensure_ascii=False)}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
             except Exception as err:
                 yield f"data: {json.dumps({'type': 'error', 'text': f'統整生成失敗：{str(err)}'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+class CaseBriefRequest(BaseModel):
+    id: str
+    title: Optional[str] = ""
+    content: str
+    main_text: Optional[str] = ""
+    reason: Optional[str] = ""
+
+
+@router.post("/case_brief")
+async def generate_case_brief(req: CaseBriefRequest):
+    """
+    一鍵生成 AI 案件速覽小卡 (Case Brief)
+    萃取：核心主文結論、爭點聚焦、原告主張 vs. 被告抗辯、法院關鍵理由心證
+    """
+    llm = None
+    try:
+        llm = get_llm()
+    except Exception:
+        llm = None
+
+    if llm:
+        case_sample = (req.main_text or "") + "\n\n" + (req.reason or req.content[:3000])
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "你是一位專業的法院司法助理。請將以下裁判書內容精準整理成一份【案件速覽小卡】。\n"
+                       "必須條理分明、文字精練：\n"
+                       "【一、核心主文結論】：一句話說明判決結果（誰勝誰敗、命給付金額或刑期）。\n"
+                       "【二、核心訴訟爭點】：本案雙方爭執的最關鍵法律或事實問題。\n"
+                       "【三、原告主張 vs. 被告抗辯】：摘要雙方立場。\n"
+                       "【四、法院判斷心證】：法院支持或駁回的核心理由與考量。\n"
+                       "【五、適用法條與原則】：本案引用的重要法律條文或法理原則。"),
+            ("human", "判決字號/案由：{title}\n裁判書內容：\n{case_sample}\n\n請輸出速覽小卡：")
+        ])
+        chain = prompt | llm
+        try:
+            async with _llm_lock:
+                res = await asyncio.wait_for(
+                    chain.ainvoke({"title": req.title or "", "case_sample": case_sample[:3000]}),
+                    timeout=5.0
+                )
+            return {"success": True, "brief": res.content.strip(), "source": "ai"}
+        except Exception as e:
+            print(f"[case_brief] LLM 生成超時或異常，退回結構化萃取: {e}")
+
+    # Fallback 結構化秒級解析
+    full_text = req.content or ""
+    clean_main = (req.main_text or "主文未載明").replace('\r', '').strip()
+
+    claims_text = "判決書中記載原告訴之聲明與請求事項"
+    claims_match = re.search(r'(?:原告主張|原告起訴主張|上訴人主張|聲請人主張)[：:\s]*([\s\S]{10,250}?)(?:被告抗辯|被上訴人|經查|本院查|理由)', full_text)
+    if claims_match:
+        claims_text = re.sub(r'\s+', ' ', claims_match.group(1)).strip()[:180] + "..."
+
+    defense_text = "判決書中記載被告答辯要領"
+    defense_match = re.search(r'(?:被告抗辯|被告則以|被上訴人抗辯|相對人陳述)[：:\s]*([\s\S]{10,250}?)(?:經查|本院查|本院得心證|本院審酌|理由)', full_text)
+    if defense_match:
+        defense_text = re.sub(r'\s+', ' ', defense_match.group(1)).strip()[:180] + "..."
+
+    reason_snippet = (req.reason or full_text)[:300]
+    reason_snippet = re.sub(r'\s+', ' ', reason_snippet).strip()[:200] + "..."
+
+    fallback_brief = f"""**【一、核心主文結論】**
+{clean_main}
+
+**【二、核心訴訟爭點】**
+本案主要聚焦於「{req.title or '實體權益爭執'}」之構成要件、責任歸屬與法律效果。
+
+**【三、兩造主張要領】**
+* 原告/聲請方主張：{claims_text}
+* 被告/抗辯方答辯：{defense_text}
+
+**【四、法院核心心證】**
+{reason_snippet}
+
+**【五、合議庭裁判提示】**
+本案經審酌兩造全辯論意旨及卷內各項證據調查結果，綜合認定判斷如主文。"""
+
+    return {"success": True, "brief": fallback_brief, "source": "rule_based"}
+
+
+class CompareDiffRequest(BaseModel):
+    id_a: str
+    title_a: str
+    content_a: str
+    main_text_a: Optional[str] = ""
+    id_b: str
+    title_b: str
+    content_b: str
+    main_text_b: Optional[str] = ""
+
+
+@router.post("/compare_diff")
+async def compare_judgments_diff(req: CompareDiffRequest):
+    """
+    一鍵歷審翻轉 / 爭點變更智慧對照：
+    比對兩件裁判（例如原審與上訴審，或兩篇爭議裁判）的主文差異、爭點心證逆轉與認定變更
+    """
+    llm = None
+    try:
+        llm = get_llm()
+    except Exception:
+        llm = None
+
+    if llm:
+        sample_a = f"【裁判A ({req.title_a})】\n主文：{req.main_text_a or '無'}\n全文重點：{req.content_a[:2200]}"
+        sample_b = f"【裁判B ({req.title_b})】\n主文：{req.main_text_b or '無'}\n全文重點：{req.content_b[:2200]}"
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "你是一位精通台灣司法實務與訴訟程序的資深法官助理。請針對以下兩件關聯判決（通常為原審與上訴審，或同類爭點之兩案）進行深度異動比對分析：\n"
+                       "請依序條列：\n"
+                       "【一、主文裁判結果差異】：明確對比誰勝誰敗、命給付金額或刑度是否有增減、撤銷、廢棄或維持。\n"
+                       "【二、核心爭點與事實認定異動】：二審或對照案推翻或改變了哪些原審事實認定或法律見解？\n"
+                       "【三、法院關鍵心證翻轉/維持原因】：上級審改判或維持的核心論理為何？\n"
+                       "【四、法務訴訟策略啟示】：從此兩案演變中獲得的實務攻防策略借鏡。"),
+            ("human", "{sample_a}\n\n{sample_b}\n\n請給出專業的對照分析報告：")
+        ])
+        chain = prompt | llm
+        try:
+            async with _llm_lock:
+                res = await asyncio.wait_for(
+                    chain.ainvoke({"sample_a": sample_a, "sample_b": sample_b}),
+                    timeout=5.0
+                )
+            return {"success": True, "diff": res.content.strip(), "source": "ai"}
+        except Exception as e:
+            print(f"[compare_diff] LLM 生成超時或異常，轉為結構化對照: {e}")
+
+    # Fallback 結構化對照分析
+    main_a = (req.main_text_a or "").strip()
+    main_b = (req.main_text_b or "").strip()
+
+    status_diff = "主文維持或程序處理"
+    if ("駁回" in main_b and "駁回" not in main_a) or ("廢棄" in main_b) or ("原判決廢棄" in main_b) or ("撤銷" in main_b):
+        status_diff = "裁判結果產生重大逆轉（原判決遭撤銷、廢棄或改判）"
+    elif "駁回上訴" in main_b or "上訴駁回" in main_b:
+        status_diff = "上訴遭駁回，維持原審認定"
+    elif ("一部" in main_b) or ("其餘" in main_b):
+        status_diff = "上訴一部有理由、一部無理由（部分改判）"
+
+    fallback_diff = f"""**【一、裁判結果與審級演變】**
+* 審級走向：{status_diff}
+* 案件 A 主文：{main_a if main_a else '主文未載明'}
+* 案件 B 主文：{main_b if main_b else '主文未載明'}
+
+**【二、兩案核心主文實體對照】**
+* 給付與負擔義務：兩案主文記載之訴訟標的與判命履行事項存在實體變動或維持。
+* 訴訟費用負擔：視上訴准駁情況由敗訴方或兩造按比例分擔。
+
+**【三、爭點心證與論理觀察】**
+* 兩審級法院就案件之事實調查、證據證明力評價與法律構成要件適用進行前後審酌。
+* 建議重點比對兩案之【理由】章節中針對爭點之論斷差異。
+
+**【四、法務實戰啟示】**
+* 檢視上級審所持之法律爭點闡明，作為後續類似案件之攻防主張與舉證重點。"""
+
+    return {"success": True, "diff": fallback_diff, "source": "rule_based"}

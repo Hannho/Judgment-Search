@@ -27,6 +27,7 @@ class JudgmentRequest(BaseModel):
     case_type: str
     case_no: str
     date: str
+    content: str = ""
     include_self: bool = True   # 預設 True：完整保留本案在內的所有歷審紀錄，與司法院官方數量一致
 
 
@@ -72,25 +73,35 @@ COURT_MAPPING = {
 # JavaScript 片段
 # ---------------------------------------------------------------------------
 
-# 找出「歷審」附近的 data.aspx 連結（由近到遠往上找祖先節點）
+# 找出「歷審」專屬容器內的 data.aspx 連結（嚴格排除分頁導航按鈕，且不爬出至外層）
 JS_FIND_HISTORY_LINKS = r"""
 const cur = arguments[0];
 const idOf = a => { try { return new URL(a.href, location.href).searchParams.get('id') || ''; } catch (e) { return ''; } };
+const isNavButton = a => {
+    const t = (a.textContent || '').trim();
+    if (/^(下一筆|上一筆|第一筆|最末筆|回列表|回裁判列表|友善列印|回查詢結果)$/.test(t)) return true;
+    if (a.href && (a.href.includes('&ot=in') || a.href.includes('?ot=in'))) return true;
+    return false;
+};
 const dataLinks = root => Array.from(root.querySelectorAll('a[href*="data.aspx"]'))
-    .filter(a => { const i = idOf(a); return i && i !== cur; });
-const hits = Array.from(document.querySelectorAll('body *')).filter(el =>
-    Array.from(el.childNodes).some(n => n.nodeType === 3 && n.textContent.includes('歷審')));
-const panel = document.querySelector('[id^="JudHis"]');
+    .filter(a => { const i = idOf(a); return i && i !== cur && !isNavButton(a); });
+
+// 1. 優先直接在歷審裁判專屬容器找
+const panel = document.querySelector('[id^="JudHis"], #JudHis, [id*="relaHis"], [id*="RelaHis"], .rela-his');
 if (panel) {
     const ls = dataLinks(panel);
-    if (ls.length) return ls.map(a => ({title: a.textContent, url: a.href}));
+    if (ls.length) return ls.map(a => ({title: (a.textContent || '').trim(), url: a.href}));
 }
+
+// 2. 透過含「歷審」的標題元素往上找到所屬 panel，但嚴禁跳出至 panel-group 或外層主容器
+const hits = Array.from(document.querySelectorAll('body *')).filter(el =>
+    Array.from(el.childNodes).some(n => n.nodeType === 3 && n.textContent.includes('歷審')));
+
 for (const el of hits) {
-    let node = el;
-    for (let i = 0; i < 6 && node; i++) {
-        const ls = dataLinks(node);
-        if (ls.length) return ls.map(a => ({title: a.textContent, url: a.href}));
-        node = node.parentElement;
+    const p = el.closest('.panel, .card, [class*="panel-"], [class*="card-"]');
+    if (p && !p.classList.contains('panel-group')) {
+        const ls = dataLinks(p);
+        if (ls.length) return ls.map(a => ({title: (a.textContent || '').trim(), url: a.href}));
     }
 }
 return [];
@@ -110,43 +121,70 @@ for (const el of hits) {
 return clicked;
 """
 
-# 取得頁面上所有 data.aspx 連結（排除自己）。供「點擊前後比對」使用
+# 取得頁面上所有 data.aspx 連結（排除自己與分頁導覽按鈕）。供「點擊前後比對」使用
 JS_ALL_DATA_LINKS = r"""
 const cur = arguments[0];
 const idOf = a => { try { return new URL(a.href, location.href).searchParams.get('id') || ''; } catch (e) { return ''; } };
+const isNavButton = a => {
+    const t = (a.textContent || '').trim();
+    if (/^(下一筆|上一筆|第一筆|最末筆|回列表|回裁判列表|友善列印|回查詢結果)$/.test(t)) return true;
+    if (a.href && (a.href.includes('&ot=in') || a.href.includes('?ot=in'))) return true;
+    return false;
+};
 return Array.from(document.querySelectorAll('a[href*="data.aspx"]'))
-    .filter(a => { const i = idOf(a); return i && i !== cur; })
-    .map(a => ({title: a.textContent, url: a.href}));
+    .filter(a => { const i = idOf(a); return i && i !== cur && !isNavButton(a); })
+    .map(a => ({title: (a.textContent || '').trim(), url: a.href}));
 """
 
-# 找「相關法條」面板：由標題往上找最近的、含 <li> 的祖先節點，取出每個項目的文字與（若有）連結
+# 找「相關法條」面板：定位專屬的法條容器，並嚴格排除歷審裁判與審理備註
 JS_FIND_LAW_ITEMS = r"""
-const hits = Array.from(document.querySelectorAll('body *')).filter(el =>
-    Array.from(el.childNodes).some(n => n.nodeType === 3 && n.textContent.includes('相關法條')));
-const exact = Array.from(document.querySelectorAll('#JudrelaLaw ul.rela-law li'));
-if (exact.length) {
-    return exact.map(li => {
-        const a = li.querySelector('a[href]');
-        return {
-            text: (li.textContent || '').replace(/\s+/g, ' ').trim(),
-            url: a ? a.href : ''
-        };
-    });
-}
-for (const el of hits) {
-    let node = el;
-    for (let i = 0; i < 6 && node; i++) {
-        const lis = Array.from(node.querySelectorAll('li'));
-        if (lis.length) {
-            return lis.map(li => {
+const isNotLaw = (text, url) => {
+    if (!text) return true;
+    if (url && /data\.aspx\?[^"]*ty=JD/i.test(url)) return true;
+    if (/(法院|判決|裁定|歷審|字第.*號|無歷審|繫屬法院|審理中|撤回上訴)/i.test(text)) return true;
+    return false;
+};
+
+// 1. 優先匹配司法院標準相關法條區塊 (#JudrelaLaw 或包含 rela-law 樣式)
+const lawContainers = Array.from(document.querySelectorAll('#JudrelaLaw, [id*="relaLaw"], [id*="RelaLaw"], #JudLaw, [id*="JudLaw"]'));
+for (const container of lawContainers) {
+    const lis = Array.from(container.querySelectorAll('li'));
+    if (lis.length) {
+        const filtered = lis
+            .map(li => {
                 const a = li.querySelector('a[href]');
                 return {
                     text: (li.textContent || '').replace(/\s+/g, ' ').trim(),
                     url: a ? a.href : ''
                 };
-            });
+            })
+            .filter(item => !isNotLaw(item.text, item.url));
+        if (filtered.length) return filtered;
+    }
+}
+
+// 2. 備援：透過包含「相關法條」文字的標題元素往上找到所屬 panel，但嚴禁跳出至 .panel-group 或父層 accordion
+const hits = Array.from(document.querySelectorAll('body *')).filter(el =>
+    Array.from(el.childNodes).some(n => n.nodeType === 3 && n.textContent.includes('相關法條')));
+
+for (const el of hits) {
+    // 限制在所屬的 panel / card 內部，不得往外爬到包含歷審裁判的 panel-group
+    const panel = el.closest('.panel, .card, [class*="panel-"], [class*="card-"]');
+    if (panel && !panel.classList.contains('panel-group')) {
+        const body = panel.querySelector('.panel-collapse, .panel-body, .card-body') || panel;
+        const lis = Array.from(body.querySelectorAll('li'));
+        if (lis.length) {
+            const filtered = lis
+                .map(li => {
+                    const a = li.querySelector('a[href]');
+                    return {
+                        text: (li.textContent || '').replace(/\s+/g, ' ').trim(),
+                        url: a ? a.href : ''
+                    };
+                })
+                .filter(item => !isNotLaw(item.text, item.url));
+            if (filtered.length) return filtered;
         }
-        node = node.parentElement;
     }
 }
 return [];
@@ -165,12 +203,20 @@ return hits.length ? hits[0].href : '';
 # ---------------------------------------------------------------------------
 
 def parse_target_date(date_str: str) -> str:
-    """把 20260731 / 2026-07-31 / 2026/7/31 轉成民國 115.07.31 格式。"""
+    """把 20260731 / 2026-07-31 / 2026/7/31 或民國 115.07.31 / 1150731 轉成民國 115.07.31 格式。"""
+    date_str = (date_str or "").strip()
+    if not date_str:
+        return ""
     if len(date_str) >= 8 and date_str[:8].isdigit():
         return f"{int(date_str[:4]) - 1911}.{date_str[4:6]}.{date_str[6:8]}"
+    if len(date_str) == 7 and date_str.isdigit():
+        return f"{int(date_str[:3])}.{date_str[3:5]}.{date_str[5:7]}"
     nums = re.findall(r"\d+", date_str)
     if len(nums) >= 3:
-        return f"{int(nums[0]) - 1911}.{nums[1].zfill(2)}.{nums[2].zfill(2)}"
+        year = int(nums[0])
+        if year >= 1900:
+            year -= 1911
+        return f"{year}.{nums[1].zfill(2)}.{nums[2].zfill(2)}"
     return ""
 
 
@@ -237,8 +283,37 @@ def enter_content_frame(driver):
         pass
 
 
+def reconstruct_judgment_title_from_jid(jid: str) -> str:
+    """從 JID 解析並重建標準判決字號，防止爬蟲抓回空標題或分頁導覽文字。"""
+    if not jid:
+        return ""
+    parts = jid.split(",")
+    if len(parts) < 4:
+        return jid
+    court_code = parts[0][:3].upper()
+    court_name = COURT_MAPPING.get(court_code, "")
+    year = parts[1]
+    case_type = parts[2]
+    case_no = parts[3]
+    date_str = parts[4] if len(parts) > 4 else ""
+    date_formatted = parse_target_date(date_str)
+
+    # 判斷判決或裁定
+    doc_kind = "裁判"
+    if "裁定" in case_type or any(k in case_type for k in ("聲", "抗", "執", "司票", "救", "保")):
+        doc_kind = "裁定"
+    elif any(k in case_type for k in ("訴", "上", "易", "簡")):
+        doc_kind = "判決"
+
+    title = f"{court_name} {year} 年度 {case_type} 字第 {case_no} 號{doc_kind}"
+    if date_formatted:
+        title += f"({date_formatted})"
+    return title.strip()
+
+
 def normalize(items):
-    """清理標題、補完整網址、去重。"""
+    """清理標題、排除分頁導覽按鈕雜訊、去重，並在標題遺失時由 JID 自動還原。"""
+    INVALID_TITLES = {"下一筆", "上一筆", "第一筆", "最末筆", "回列表", "回裁判列表", "友善列印", "回查詢結果", "本件無歷審裁判", "無歷審"}
     seen, out = set(), []
     for it in items or []:
         url = (it.get("url") or "").strip()
@@ -246,11 +321,30 @@ def normalize(items):
             continue
         if not url.startswith("http"):
             url = BASE + url.lstrip("/")
-        if url in seen:
+
+        # 嚴格排除搜尋分頁瀏覽參數 (&ot=in)
+        if "ot=in" in url:
+            continue
+
+        jid = jid_from_url(url)
+        if url in seen or (jid and jid in seen):
             continue
         seen.add(url)
-        title = re.sub(r"\s+", " ", (it.get("title") or "")).strip()
-        out.append({"title": title or url, "url": url})
+        if jid:
+            seen.add(jid)
+
+        raw_title = re.sub(r"\s+", " ", (it.get("title") or "")).strip()
+
+        # 若抓回的標題是「下一筆」、「最末筆」等分頁按鈕，或標題為空/僅為網址，自動還原
+        if not raw_title or raw_title in INVALID_TITLES or raw_title.startswith("http") or "data.aspx" in raw_title:
+            if jid:
+                title = reconstruct_judgment_title_from_jid(jid)
+            else:
+                continue
+        else:
+            title = raw_title
+
+        out.append({"title": title, "url": url, "jid": jid})
     return out
 
 
@@ -328,6 +422,8 @@ def extract_history(driver, cur_id: str):
     found = re.findall(r'href="([^"]*data\.aspx\?[^"]*id=[^"]+)"', html, flags=re.I)
     items = []
     for h in found:
+        if "ot=in" in h:
+            continue
         h = h.replace("&amp;", "&")
         absolute = urllib.parse.urljoin(driver.current_url, h)
         qid = urllib.parse.parse_qs(urllib.parse.urlparse(absolute).query).get("id", [""])[0]
@@ -339,8 +435,20 @@ def extract_history(driver, cur_id: str):
     return links
 
 
+def is_valid_law_item(text: str, url: str) -> bool:
+    if not text:
+        return False
+    # 判決書連結或含有判決/法院/歷審資訊，絕非法條
+    if "data.aspx?ty=JD" in url or "ty=JD" in url:
+        return False
+    invalid_keywords = ["法院", "判決", "裁定", "歷審", "無歷審", "繫屬法院", "審理中", "撤回上訴", "字第", "本件無"]
+    if any(k in text for k in invalid_keywords):
+        return False
+    return True
+
+
 def extract_laws(driver):
-    """抓判決頁右側「相關法條」清單。回傳 [{"text": "...", "url": "..."}]；沒有該面板就回傳空陣列。"""
+    """抓判決頁右側「相關法條」清單。回傳 [{"text": "...", "url": "..."}]；沒有該面板或無合法條文就回傳空陣列。"""
     try:
         enter_content_frame(driver)
         items = driver.execute_script(JS_FIND_LAW_ITEMS) or []
@@ -351,11 +459,14 @@ def extract_laws(driver):
     seen, out = set(), []
     for it in items:
         text = re.sub(r"\s+", " ", (it.get("text") or "")).strip()
+        url = (it.get("url") or "").strip()
         if not text or text in seen:
             continue
+        if not is_valid_law_item(text, url):
+            continue
         seen.add(text)
-        out.append({"text": text, "url": (it.get("url") or "").strip()})
-    print(f"[laws] 抓到 {len(out)} 筆相關法條")
+        out.append({"text": text, "url": url})
+    print(f"[laws] 抓到 {len(out)} 筆合法相關法條")
     return out
 
 
@@ -398,6 +509,30 @@ def open_by_search(driver, req: JudgmentRequest, court_name: str, target_date_st
 # 例如 STEV,108,店小,1032,20190912,1，與司法院連結裡的 id 參數格式一致。
 import json
 from database import run_sql, get_cached_crawler_data, set_cached_crawler_data
+
+
+LAW_EXTRACT_REGEX = re.compile(
+    r'((?:中華民國)?(?:刑法|民法|刑事訴訟法|民事訴訟法|行政訴訟法|強制執行法|家事事件法|勞動基準法|消費者保護法|組織犯罪防制條例|洗錢防制法|毒品危害防制條例|道路交通管理處罰條例|證券交易法|保險法|公司法|票據法|著作權法|商標法|專利法|個人資料保護法|國家賠償法|少年事件處理法|貪污治罪條例|槍砲彈藥刀械管制條例|政府採購法|破產法|土地法|公寓大廈管理條例|戶籍法|入出國及移民法|憲法訴訟法)\s*第\s*[0-9一二三四五六七八九十百千]+(?:\s*條之\s*[0-9一二三四五六七八九十]+|\s*條)(?:\s*第\s*[0-9一二三四五六七八九十]+\s*項)?(?:\s*第\s*[0-9一二三四五六七八九十]+\s*款)?)'
+)
+
+def extract_laws_from_text(content: str) -> list:
+    """當司法院外部網站未載明相關法條時，自動從判決書內文精準萃取援引法條"""
+    if not content:
+        return []
+    matches = LAW_EXTRACT_REGEX.findall(content)
+    seen = set()
+    out = []
+    for m in matches:
+        clean = re.sub(r'\s+', '', m).strip()
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        encoded = urllib.parse.quote(clean)
+        out.append({
+            "text": clean,
+            "url": f"https://law.moj.gov.tw/LawClass/LawSearchContent.aspx?pcode=&kw={encoded}"
+        })
+    return out
 
 
 def jid_from_url(url: str) -> str:
@@ -447,24 +582,36 @@ def get_judgment(req: JudgmentIdRequest):
 
 @router.post("/get_history")
 def get_history(req: JudgmentRequest):
-    # ---- 優先查閱本地快取（僅在已有歷審結果時直接回傳，空紀錄不命中以防誤判）----
+    # ---- 優先查閱本地快取（含負向快取：查無歷審亦直接回傳，防止無謂重啟 Chrome）----
     cached = get_cached_crawler_data(req.id)
     if cached:
         try:
             cached_history = json.loads(cached.get("history_json") or "[]")
             cached_laws = json.loads(cached.get("laws_json") or "[]")
-            if cached_history and len(cached_history) > 0:
-                if not req.include_self:
-                    me = urllib.parse.unquote(req.id).strip().lower()
-                    cached_history = [
-                        h for h in cached_history
-                        if urllib.parse.unquote(
-                            urllib.parse.parse_qs(urllib.parse.urlparse(h["url"]).query).get("id", [""])[0]
-                        ).strip().lower() != me
-                    ]
-                cached_history = attach_db_status(cached_history)
-                print(f"[get_history] 命中本地快取: {req.id} (共 {len(cached_history)} 筆歷審)")
-                return {"history": cached_history, "laws": cached_laws, "cached": True}
+            if not req.include_self and cached_history:
+                me = urllib.parse.unquote(req.id).strip().lower()
+                cached_history = [
+                    h for h in cached_history
+                    if urllib.parse.unquote(
+                        urllib.parse.parse_qs(urllib.parse.urlparse(h["url"]).query).get("id", [""])[0]
+                    ).strip().lower() != me
+                ]
+            if not cached_laws:
+                raw_content = req.content
+                if not raw_content:
+                    c_rows = run_sql("SELECT content FROM judgments WHERE id = %s", (req.id,), fetch=True)
+                    if c_rows and c_rows[0].get("content"):
+                        raw_content = c_rows[0]["content"]
+                if raw_content:
+                    cached_laws = extract_laws_from_text(raw_content)
+                    if cached_laws:
+                        try:
+                            set_cached_crawler_data(req.id, json.dumps(cached_history), json.dumps(cached_laws))
+                        except Exception:
+                            pass
+            cached_history = attach_db_status(cached_history)
+            print(f"[get_history] 命中本地快取: {req.id} (共 {len(cached_history)} 筆歷審, {len(cached_laws)} 筆法條)")
+            return {"history": cached_history, "laws": cached_laws, "cached": True}
         except Exception as e:
             print(f"[get_history] 快取解析失敗，退回現場爬蟲模式: {e}")
 
@@ -506,11 +653,11 @@ def get_history(req: JudgmentRequest):
                 print(f"[get_history] 策略B失敗: {e}")
                 debug_note += f" | B: {e}"
 
-        if DEBUG_ALWAYS or not history_results:
+        if DEBUG_ALWAYS:
             dump(driver, "final")
 
     except Exception as e:
-        print(f"❌ 爬蟲發生錯誤: {e}")
+        print(f"[crawler] 爬蟲發生錯誤: {e}")
         debug_note += f" | fatal: {e}"
         if driver:
             dump(driver, "fatal")
@@ -531,11 +678,21 @@ def get_history(req: JudgmentRequest):
             ).strip().lower() != me
         ]
 
-    # 僅在確實有抓到歷審紀錄時才寫入快取，避免暫時網路失敗被永遠快取
-    if history_results and len(history_results) > 0:
+    # 若司法院線上法條為空，從判決書內文萃取援引法條
+    if not law_results:
+        raw_content = req.content
+        if not raw_content:
+            c_rows = run_sql("SELECT content FROM judgments WHERE id = %s", (req.id,), fetch=True)
+            if c_rows and c_rows[0].get("content"):
+                raw_content = c_rows[0]["content"]
+        if raw_content:
+            law_results = extract_laws_from_text(raw_content)
+
+    # 成功爬取後寫入快取（包含空紀錄負向快取，杜絕無歷審案件重複啟動瀏覽器）
+    if "fatal:" not in debug_note:
         try:
             set_cached_crawler_data(req.id, json.dumps(history_results), json.dumps(law_results))
-            print(f"[get_history] 成功爬取並寫入快取: {req.id} (共 {len(history_results)} 筆歷審)")
+            print(f"[get_history] 成功爬取並寫入快取: {req.id} (共 {len(history_results)} 筆歷審, {len(law_results)} 筆法條)")
         except Exception as ce:
             print(f"[crawler] 寫入快取失敗: {ce}")
 

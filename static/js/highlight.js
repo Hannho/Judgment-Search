@@ -26,27 +26,62 @@ function getSelectionInfo() {
     start += lead;
 
     if (full.substring(start, start + text.length) !== text) {
-        let i = full.indexOf(text);
-        if (i === -1) {
-            // 嘗試容錯比對長句跨換行符號
-            const cleanSnippet = text.replace(/[\r\n\s]+/g, '');
-            if (cleanSnippet.length >= 2) {
-                const head = text.substring(0, Math.min(20, text.length)).trim();
-                const headIdx = full.indexOf(head);
-                if (headIdx !== -1) {
-                    start = headIdx;
-                    const candidate = full.substring(start, start + text.length);
-                    if (candidate.replace(/[\r\n\s]+/g, '') === cleanSnippet) {
-                        text = candidate;
+        // 優先以 start 為中心在前後 200 字元範圍內進行鄰近比對（防止跳回文章開頭的同名高頻詞）
+        const winStart = Math.max(0, start - 200);
+        const winEnd = Math.min(full.length, start + text.length + 200);
+        const localWin = full.substring(winStart, winEnd);
+        const localIdx = localWin.indexOf(text);
+
+        if (localIdx !== -1) {
+            start = winStart + localIdx;
+        } else {
+            // 若局部未精確匹配，尋找與原始 start 距離最接近的匹配項，而非無條件從第 0 字取
+            let bestIdx = -1;
+            let minDistance = Infinity;
+            let pos = full.indexOf(text);
+            while (pos !== -1) {
+                const dist = Math.abs(pos - start);
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    bestIdx = pos;
+                }
+                pos = full.indexOf(text, pos + 1);
+            }
+
+            if (bestIdx !== -1 && minDistance < 1500) {
+                start = bestIdx;
+            } else {
+                // 嘗試容錯比對長句跨換行符號（亦以靠近 start 者為優先）
+                const cleanSnippet = text.replace(/[\r\n\s]+/g, '');
+                if (cleanSnippet.length >= 2) {
+                    const head = text.substring(0, Math.min(20, text.length)).trim();
+                    let bestHeadIdx = -1;
+                    let minHeadDist = Infinity;
+                    let headPos = full.indexOf(head);
+                    while (headPos !== -1) {
+                        const dist = Math.abs(headPos - start);
+                        if (dist < minHeadDist) {
+                            minHeadDist = dist;
+                            bestHeadIdx = headPos;
+                        }
+                        headPos = full.indexOf(head, headPos + 1);
+                    }
+
+                    if (bestHeadIdx !== -1 && minHeadDist < 1500) {
+                        const candidate = full.substring(bestHeadIdx, bestHeadIdx + text.length);
+                        if (candidate.replace(/[\r\n\s]+/g, '') === cleanSnippet) {
+                            start = bestHeadIdx;
+                            text = candidate;
+                        } else {
+                            return null;
+                        }
+                    } else {
+                        return null;
                     }
                 } else {
                     return null;
                 }
-            } else {
-                return null;
             }
-        } else {
-            start = i;
         }
     }
 

@@ -185,21 +185,38 @@ function parseMarkdownToHtml(markdownText) {
     return result;
 }
 
-function sendChatMessage() {
+function sendChatMessage(directItem = null) {
     const input = document.getElementById('chatInput');
     const question = input.value.trim();
     const sendBtn = document.getElementById('chatSendBtn');
 
     if (!question) return;
 
-    const checkedBoxes = document.querySelectorAll('.judgment-cb:checked');
-    if (checkedBoxes.length === 0) {
-        alert("請先在左側搜尋結果中「勾選」您想要讓 AI 分析的判決書！");
-        return;
+    let selectedJudgments = [];
+
+    if (directItem) {
+        selectedJudgments = [directItem];
+    } else {
+        if (typeof selectedCasesMap !== 'undefined' && selectedCasesMap.size > 0) {
+            selectedJudgments = Array.from(selectedCasesMap.values());
+        } else {
+            const checkedBoxes = document.querySelectorAll('.judgment-cb:checked');
+            const selectedIds = Array.from(checkedBoxes).map(cb => cb.value);
+            if (selectedIds.length > 0 && typeof judgmentsData !== 'undefined') {
+                selectedJudgments = judgmentsData.filter(item => selectedIds.includes(item.id));
+            }
+        }
+        
+        // 若依然未勾選任何案件，但右側詳情頁開啟中，自動以當前開啟判決為分析目標
+        if (selectedJudgments.length === 0 && typeof currentDetailItem !== 'undefined' && currentDetailItem) {
+            selectedJudgments = [currentDetailItem];
+        }
     }
 
-    const selectedIds = Array.from(checkedBoxes).map(cb => cb.value);
-    const selectedJudgments = judgmentsData.filter(item => selectedIds.includes(item.id));
+    if (selectedJudgments.length === 0) {
+        alert("請先在左側搜尋結果中「勾選」想要讓 AI 分析的判決書，或先在右側開啟一筆判決！");
+        return;
+    }
 
     // 取得當前任務模式與自訂指令
     const taskMode = document.getElementById('chatTaskMode') ? document.getElementById('chatTaskMode').value : 'general';
