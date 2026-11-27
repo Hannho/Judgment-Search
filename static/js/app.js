@@ -1,4 +1,110 @@
 // ==========================================
+// 瀏覽器歷史紀錄與起始畫面導航 (History API & Go Home)
+// ==========================================
+const visitedCasesCache = new Map();
+let isRestoringHistoryState = false;
+let isInitialPageLoad = true;
+
+function buildListHistoryState() {
+    return {
+        view: isFavoritesMode ? 'favorites' : 'list',
+        page: currentPage || 1,
+        payload: JSON.parse(JSON.stringify(currentSearchPayload || {})),
+        keyword: document.getElementById('quickKeywordInput')?.value || '',
+        court: document.getElementById('courtInput')?.value || ''
+    };
+}
+
+function pushAppHistory(state, hashStr = '') {
+    if (isRestoringHistoryState) return;
+    try {
+        const baseUrl = window.location.pathname + window.location.search;
+        const targetUrl = hashStr ? `${baseUrl}${hashStr}` : baseUrl;
+        const cur = window.history.state;
+        if (cur && cur.view === state.view && cur.caseId === state.caseId && cur.page === state.page && JSON.stringify(cur.payload) === JSON.stringify(state.payload)) {
+            return;
+        }
+        window.history.pushState(state, '', targetUrl);
+    } catch (e) {
+        console.warn('pushState failed:', e);
+    }
+}
+
+function goHome() {
+    if (typeof closeCompareModal === 'function') closeCompareModal();
+    if (typeof closeHistoryPreview === 'function') closeHistoryPreview();
+    if (typeof closeJudgeAnalyticsModal === 'function') closeJudgeAnalyticsModal();
+    if (typeof closeCitationGraphModal === 'function') closeCitationGraphModal();
+    if (typeof closeCompensationModal === 'function') closeCompensationModal();
+    if (typeof closeSyncModal === 'function') closeSyncModal();
+    if (typeof closeFavModal === 'function') closeFavModal();
+
+    const advPanel = document.getElementById('advancedPanel');
+    const toggleText = document.getElementById('toggleText');
+    if (advPanel && advPanel.style.display !== 'none') {
+        advPanel.style.display = 'none';
+        if (toggleText) toggleText.textContent = '展開進階搜尋';
+    }
+
+    const clearBtn = document.getElementById('btnClearSearch');
+    if (clearBtn) clearBtn.style.display = 'none';
+
+    resetSearch();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+window.addEventListener('popstate', async (event) => {
+    const state = event.state;
+    if (!state) return;
+
+    isRestoringHistoryState = true;
+    try {
+        if (state.view === 'detail' && state.caseId) {
+            let item = visitedCasesCache.get(state.caseId) || (Array.isArray(judgmentsData) ? judgmentsData.find(j => j && j.id === state.caseId) : null);
+            if (!item) {
+                try {
+                    const res = await fetch('/api/scraper/get_judgment', {
+                        method: 'POST',
+                        headers: apiHeaders(),
+                        body: JSON.stringify({ id: state.caseId })
+                    });
+                    if (res.ok) item = await res.json();
+                } catch (e) {
+                    console.warn('popstate fetch judgment failed:', e);
+                }
+            }
+            if (item && item.id) {
+                await showFullContent(item.id, item, false);
+                const panel = document.getElementById('sidePanel');
+                if (panel) panel.scrollTop = 0;
+            }
+        } else if (state.view === 'favorites') {
+            closeSidePanel();
+            if (typeof enterFavorites === 'function') enterFavorites();
+        } else if (state.view === 'list') {
+            closeSidePanel();
+            isFavoritesMode = false;
+            const kwEl = document.getElementById('quickKeywordInput');
+            const courtEl = document.getElementById('courtInput');
+            if (kwEl && typeof state.keyword === 'string') kwEl.value = state.keyword;
+            if (courtEl && typeof state.court === 'string') courtEl.value = state.court;
+            const clearBtn = document.getElementById('btnClearSearch');
+            if (clearBtn && kwEl) clearBtn.style.display = kwEl.value.trim() ? 'inline-flex' : 'none';
+
+            const prevPayloadStr = JSON.stringify(currentSearchPayload || {});
+            const targetPayload = state.payload || {};
+            const targetPage = state.page || 1;
+            if (prevPayloadStr !== JSON.stringify(targetPayload) || currentPage !== targetPage) {
+                currentSearchPayload = JSON.parse(JSON.stringify(targetPayload));
+                await fetchJudgments(targetPage, true);
+            }
+        }
+    } finally {
+        isRestoringHistoryState = false;
+    }
+});
+
+// ==========================================
 // 頁面初始化
 // ==========================================
 document.addEventListener("DOMContentLoaded", () => {
@@ -10,6 +116,9 @@ document.addEventListener("DOMContentLoaded", () => {
         courtSelect.appendChild(option);
     }
     currentSearchPayload = {};
+    try {
+        window.history.replaceState(buildListHistoryState(), '', window.location.pathname + window.location.search);
+    } catch (e) {}
     fetchJudgments(1);
     loadUsers();
     initReadingTypography();
@@ -228,6 +337,12 @@ async function fetchJudgments(page = 1, refreshStats = true) {
         judgmentsData = listData.data.filter(item => item && item.id && item.id.trim() !== "");
         currentPage = page;
         totalItems = "計算中..."; 
+
+        if (isInitialPageLoad) {
+            isInitialPageLoad = false;
+        } else {
+            pushAppHistory(buildListHistoryState(), '');
+        }
         
         displayResults();
         
@@ -1111,6 +1226,14 @@ async function showFullContent(id, itemOverride = null, isFreshOpen = true) {
     }
 
     currentDetailItem = item;
+    visitedCasesCache.set(id, item);
+    pushAppHistory({
+        view: 'detail',
+        caseId: id,
+        page: currentPage || 1,
+        payload: JSON.parse(JSON.stringify(currentSearchPayload || {})),
+        isFav: isFavoritesMode
+    }, `#case=${encodeURIComponent(id)}`);
     const idParts = item.id ? item.id.split(',') : [];
     const displayYear = (item.year && item.year.trim() !== "") ? item.year : (idParts[1] || "");
     const displayType = (item.case_type && item.case_type.trim() !== "") ? item.case_type : (idParts[2] || "");
@@ -1382,10 +1505,16 @@ function updateNavBreadcrumb() {
 }
 
 function closeSidePanel() {
+    abortCaseBriefRequest();
+    const briefCard = document.getElementById('aiCaseBriefCard');
+    if (briefCard) briefCard.style.display = 'none';
     document.getElementById('sidePanel').style.display = 'none';
     judgmentNavigationStack = [];
     updateNavBreadcrumb();
     closeHistoryPreview();
+    if (!isRestoringHistoryState && window.history.state && window.history.state.view === 'detail') {
+        pushAppHistory(buildListHistoryState(), '');
+    }
 }
 
 // ==========================================
@@ -1401,6 +1530,11 @@ function toggleChatPanel(forceOpen) {
     const open = (typeof forceOpen === 'boolean') ? forceOpen : (wrap.style.display === 'none');
     wrap.style.display = open ? 'block' : 'none';
     
+    // 收起 AI 助理視窗時，立即中止正在背景執行的 LLM 請求
+    if (!open && typeof window.abortActiveChatRequest === 'function') {
+        window.abortActiveChatRequest();
+    }
+
     // 展開聊天視窗時隱藏獨立浮動大圓鈕，由卡片標題列的關閉鈕收起；收起時恢復浮動機器人按鈕
     btn.style.display = open ? 'none' : 'block';
     btn.classList.toggle('open', open);
@@ -1488,6 +1622,37 @@ function extractLawsFromContentText(content) {
     return out;
 }
 
+const MOJ_PCODE_MAP = {
+    '中華民國憲法': 'A0000001', '憲法': 'A0000001',
+    '民法': 'B0000001', '民事訴訟法': 'B0010001', '強制執行法': 'B0010004', '非訟事件法': 'B0010008', '家事事件法': 'B0010051',
+    '中華民國刑法': 'C0000001', '刑法': 'C0000001', '中華民國刑法施行法': 'C0000002', '刑法施行法': 'C0000002',
+    '刑事訴訟法': 'C0010001', '刑事訴訟法施行法': 'C0010002', '毒品危害防制條例': 'C0000008', '少年事件處理法': 'C0010011',
+    '洗錢防制法': 'G0380131', '票據法': 'G0380028', '銀行法': 'G0380001', '證券交易法': 'G0400001', '保險法': 'G0390002',
+    '道路交通管理處罰條例': 'K0040012', '勞動基準法': 'N0030001', '職業安全衛生法': 'N0060001',
+    '行政程序法': 'A0030055', '行政訴訟法': 'A0030154', '行政罰法': 'A0030210', '訴願法': 'A0030020',
+    '國家賠償法': 'I0020004', '個人資料保護法': 'I0050021',
+    '消費者保護法': 'J0170001', '公司法': 'J0080001', '著作權法': 'J0070017', '商標法': 'J0070001', '專利法': 'J0070007', '公平交易法': 'J0150002',
+    '醫療法': 'L0020021', '兒童及少年福利與權益保障法': 'D0050001', '家庭暴力防治法': 'D0050071', '性侵害犯罪防治法': 'D0050074',
+    '詐欺犯罪危害防制條例': 'D0080227', '組織犯罪防制條例': 'C0000013', '槍砲彈藥刀械管制條例': 'D0080047', '貪污治罪條例': 'C0000007'
+};
+
+function buildMojLawUrl(rawText) {
+    const clean = String(rawText || '').replace(/\s+/g, '').replace(/[（(][^）)]*[）)]/g, '');
+    // 先比對完整法規名稱（由長到短，避免「刑法施行法」誤判為「刑法」）
+    const sortedNames = Object.keys(MOJ_PCODE_MAP).sort((a, b) => b.length - a.length);
+    for (const name of sortedNames) {
+        if (clean.startsWith(name)) {
+            return `https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=${MOJ_PCODE_MAP[name]}`;
+        }
+    }
+    const m = clean.match(/^([^\d第]+?(?:施行法|法|條例|細則|規則|辦法|憲法))/);
+    const lawName = (m && m[1]) ? m[1] : clean;
+    if (MOJ_PCODE_MAP[lawName]) {
+        return `https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=${MOJ_PCODE_MAP[lawName]}`;
+    }
+    return `https://www.google.com/search?q=${encodeURIComponent('site:law.moj.gov.tw ' + (lawName || rawText))}`;
+}
+
 function renderLaws(laws) {
     const card = document.getElementById('lawCard');
     const box = document.getElementById('sideLaws');
@@ -1517,34 +1682,15 @@ function renderLaws(laws) {
     box.innerHTML = '<ul>' + validLaws.map(l => {
         const rawText = String((l && l.text) || '').trim();
         const text = escapeHtml(rawText);
-        const safeRaw = encodeURIComponent(rawText);
-        const searchBtn = `<button type="button" class="btn-toggle" style="font-size:0.75em; padding:1px 6px; margin-left:6px; background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; cursor:pointer;" onclick="searchByLawArticle('${safeRaw}')" title="以本條文反向檢索所有適用此法條之裁判">反向檢索</button>`;
-        return (l && l.url)
-            ? `<li style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;"><a href="${escapeHtml(l.url)}" target="_blank" rel="noopener" style="flex:1; word-break:break-word;">${text}</a>${searchBtn}</li>`
-            : `<li style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;"><span style="flex:1; word-break:break-word;">${text}</span>${searchBtn}</li>`;
+        const mojUrl = buildMojLawUrl(rawText);
+        return `<li style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px;">
+            <a href="${escapeHtml(mojUrl)}" target="_blank" rel="noopener noreferrer" style="flex:1; word-break:break-word; display:flex; align-items:center; justify-content:space-between; gap:6px; text-decoration:none; color:#1d4ed8;" title="前往全國法規資料庫查看法規全文">
+                <span>${text}</span>
+                <span style="font-size:0.74em; color:#047857; background:#ecfdf5; border:1px solid #a7f3d0; padding:1px 6px; border-radius:4px; white-space:nowrap; flex-shrink:0;">全國法規 ↗</span>
+            </a>
+        </li>`;
     }).join('') + '</ul>';
     card.style.display = 'block';
-}
-
-function searchByLawArticle(lawRaw) {
-    if (!lawRaw) return;
-    const cleanLaw = decodeURIComponent(lawRaw).trim();
-    // 擷取法規與條號，例如從 "刑法第276條第1項" 擷取 "刑法 第 276 條"
-    const match = cleanLaw.match(/^([^\d第]+(?:法|條例|細則)?)(?:第?\s*(\d+)\s*條)?/);
-    let term = cleanLaw;
-    if (match && match[1] && match[2]) {
-        term = `${match[1]} 第 ${match[2]} 條`;
-    }
-    const kwInput = document.getElementById('quickKeywordInput');
-    if (kwInput) {
-        kwInput.value = term;
-    }
-    const synToggle = document.getElementById('synonymsExpandToggle');
-    if (synToggle) {
-        synToggle.checked = false;
-    }
-    document.querySelector('.search-box')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    searchJudgments();
 }
 
 function formatBriefMarkdown(text) {
@@ -1555,6 +1701,23 @@ function formatBriefMarkdown(text) {
     escaped = escaped.replace(/\n\n/g, '<div style="margin-top:6px;"></div>');
     escaped = escaped.replace(/\n/g, '<br>');
     return escaped;
+}
+
+let caseBriefAbortController = null;
+
+function abortCaseBriefRequest() {
+    if (caseBriefAbortController) {
+        try { caseBriefAbortController.abort(); } catch (e) {}
+        caseBriefAbortController = null;
+    }
+}
+
+function closeCaseBriefCard() {
+    abortCaseBriefRequest();
+    const briefCard = document.getElementById('aiCaseBriefCard');
+    const btn = document.getElementById('btnCaseBrief');
+    if (briefCard) briefCard.style.display = 'none';
+    if (btn) btn.style.background = '#f0fdf4';
 }
 
 async function toggleCaseBrief() {
@@ -1575,12 +1738,15 @@ async function toggleCaseBrief() {
         return;
     }
 
-    // 若當前案件已載入且正在顯示中，點擊則收合
-    if (briefCard.style.display !== 'none' && briefCard.dataset.loadedId === currentDetailItem.id) {
-        briefCard.style.display = 'none';
-        if (btn) btn.style.background = '#f0fdf4';
+    // 若當前視窗正在顯示中（不論已載入或載入中），點擊則收合並立即中止背景 LLM
+    if (briefCard.style.display !== 'none' && (briefCard.dataset.loadedId === currentDetailItem.id || caseBriefAbortController)) {
+        closeCaseBriefCard();
         return;
     }
+
+    abortCaseBriefRequest();
+    const controller = new AbortController();
+    caseBriefAbortController = controller;
 
     briefCard.style.display = 'block';
     if (btn) btn.style.background = '#dcfce7';
@@ -1590,7 +1756,7 @@ async function toggleCaseBrief() {
                 <span style="display:inline-block; width:14px; height:14px; border:2px solid #16a34a; border-top-color:transparent; border-radius:50%; animation: spin 0.8s linear infinite;"></span>
                 <strong style="color:#15803d; font-size:1.05em;">AI 案件速覽小卡 (Case Brief)</strong>
             </div>
-            <button type="button" class="btn-toggle" style="font-size:0.75em; padding:1px 6px;" onclick="document.getElementById('aiCaseBriefCard').style.display='none'">收起</button>
+            <button type="button" class="btn-toggle" style="font-size:0.75em; padding:1px 6px;" onclick="closeCaseBriefCard()">收起</button>
         </div>
         <div style="color:#475569; font-size:0.9em; padding:6px 0;">正在由 AI 解析本案主文結論、訴訟爭點、兩造主張與核心心證...</div>
     `;
@@ -1608,11 +1774,13 @@ async function toggleCaseBrief() {
         const res = await fetch('/api/ai/case_brief', {
             method: 'POST',
             headers: (typeof apiHeaders === 'function') ? apiHeaders() : { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: controller.signal
         });
 
         if (!res.ok) throw new Error("伺服器回應狀態異常 (" + res.status + ")");
         const data = await res.json();
+        if (data.cancelled) return;
         const briefText = data.brief || '無法產生速覽內容';
         briefCard.dataset.loadedId = currentDetailItem.id;
 
@@ -1623,11 +1791,14 @@ async function toggleCaseBrief() {
                     <strong style="color:#15803d; font-size:1.05em;">AI 案件速覽小卡 (Case Brief)</strong>
                     <span style="font-size:0.75em; background:#dcfce7; color:#166534; padding:1px 6px; border-radius:4px; font-weight:bold;">${data.source === 'ai' ? '本機 LLM 生成' : '結構化萃取'}</span>
                 </div>
-                <button type="button" class="btn-toggle" style="font-size:0.75em; padding:1px 6px;" onclick="document.getElementById('aiCaseBriefCard').style.display='none'">收起</button>
+                <button type="button" class="btn-toggle" style="font-size:0.75em; padding:1px 6px;" onclick="closeCaseBriefCard()">收起</button>
             </div>
             <div style="line-height:1.65; color:#14532d;">${formattedHtml}</div>
         `;
     } catch (e) {
+        if (e.name === 'AbortError' || controller.signal.aborted) {
+            return;
+        }
         console.warn('API fetch failed, falling back to instant local extraction:', e);
         const localBrief = generateLocalBrief(currentDetailItem);
         briefCard.dataset.loadedId = currentDetailItem.id;
@@ -1637,10 +1808,14 @@ async function toggleCaseBrief() {
                     <strong style="color:#15803d; font-size:1.05em;">AI 案件速覽小卡 (Case Brief)</strong>
                     <span style="font-size:0.75em; background:#fef3c7; color:#92400e; padding:1px 6px; border-radius:4px; font-weight:bold;">即時結構化解析</span>
                 </div>
-                <button type="button" class="btn-toggle" style="font-size:0.75em; padding:1px 6px;" onclick="document.getElementById('aiCaseBriefCard').style.display='none'">收起</button>
+                <button type="button" class="btn-toggle" style="font-size:0.75em; padding:1px 6px;" onclick="closeCaseBriefCard()">收起</button>
             </div>
             <div style="line-height:1.65; color:#14532d;">${formatBriefMarkdown(localBrief)}</div>
         `;
+    } finally {
+        if (caseBriefAbortController === controller) {
+            caseBriefAbortController = null;
+        }
     }
 }
 
@@ -1835,6 +2010,21 @@ function renderCompareModal() {
     modal.style.display = 'flex';
 }
 
+let compareDiffAbortController = null;
+
+function abortCompareDiffRequest() {
+    if (compareDiffAbortController) {
+        try { compareDiffAbortController.abort(); } catch (e) {}
+        compareDiffAbortController = null;
+    }
+}
+
+function closeCompareAiDiffBox() {
+    abortCompareDiffRequest();
+    const diffBox = document.getElementById('compareAiDiffBox');
+    if (diffBox) diffBox.style.display = 'none';
+}
+
 async function generateCompareDiffAI() {
     if (!compareCaseA || !compareCaseB) {
         alert("請確認左右兩側皆已載入比對案件！");
@@ -1843,6 +2033,10 @@ async function generateCompareDiffAI() {
     const diffBox = document.getElementById('compareAiDiffBox');
     const diffContent = document.getElementById('compareAiDiffContent');
     if (!diffBox || !diffContent) return;
+
+    abortCompareDiffRequest();
+    const controller = new AbortController();
+    compareDiffAbortController = controller;
 
     diffBox.style.display = 'block';
     diffContent.textContent = "AI 正在深度比對兩審級裁判書的主文差異、爭點逆轉與心證演變，請稍候...";
@@ -1863,17 +2057,27 @@ async function generateCompareDiffAI() {
                 title_b: titleB,
                 content_b: compareCaseB.content || '',
                 main_text_b: compareCaseB.main_text || ''
-            })
+            }),
+            signal: controller.signal
         });
         if (!res.ok) throw new Error("AI 比對服務暫時無法回應");
         const data = await res.json();
+        if (data.cancelled) return;
         diffContent.innerHTML = formatBriefMarkdown(data.diff || '無比對內容');
     } catch (e) {
+        if (e.name === 'AbortError' || controller.signal.aborted) {
+            return;
+        }
         diffContent.textContent = "比對失敗：" + e.message;
+    } finally {
+        if (compareDiffAbortController === controller) {
+            compareDiffAbortController = null;
+        }
     }
 }
 
 function swapCompareCases() {
+    abortCompareDiffRequest();
     const temp = compareCaseA;
     compareCaseA = compareCaseB;
     compareCaseB = temp;
@@ -1882,11 +2086,18 @@ function swapCompareCases() {
 
 function closeCompareModal(event) {
     if (event && event.target && event.target !== event.currentTarget) return;
+    abortCompareDiffRequest();
     const modal = document.getElementById('compareModal');
     if (modal) modal.style.display = 'none';
     const diffBox = document.getElementById('compareAiDiffBox');
     if (diffBox) diffBox.style.display = 'none';
 }
+
+window.addEventListener('beforeunload', () => {
+    if (typeof window.abortActiveChatRequest === 'function') window.abortActiveChatRequest();
+    abortCaseBriefRequest();
+    abortCompareDiffRequest();
+});
 
 function printCompareView() {
     if (!compareCaseA || !compareCaseB) return;
@@ -2306,10 +2517,12 @@ function closeCompensationModal(event) {
 async function runCompensationAnalytics() {
     const input = document.getElementById('compKeywordInput');
     const loading = document.getElementById('compLoading');
+    const errorBox = document.getElementById('compErrorBox');
     const content = document.getElementById('compAnalyticsContent');
     const kw = input ? input.value.trim() : "損害賠償";
 
     if (loading) loading.style.display = 'block';
+    if (errorBox) { errorBox.style.display = 'none'; errorBox.innerHTML = ''; }
     if (content) content.style.display = 'none';
 
     let courtCode = '';
@@ -2335,6 +2548,7 @@ async function runCompensationAnalytics() {
             throw new Error(errMsg);
         }
         const data = await res.json();
+        if (content) content.style.display = 'block';
 
         // 填入 4 KPI
         document.getElementById('compTotalSample').textContent = `${data.total_analyzed || 0} 筆`;
@@ -2433,9 +2647,11 @@ async function runCompensationAnalytics() {
     } catch (e) {
         console.error("行情分析失敗:", e);
         if (loading) loading.style.display = 'none';
-        if (content) {
-            content.style.display = 'block';
-            content.innerHTML = `
+        if (content) content.style.display = 'none';
+        const errTarget = errorBox || content;
+        if (errTarget) {
+            errTarget.style.display = 'block';
+            errTarget.innerHTML = `
                 <div style="padding: 35px 20px; text-align: center;">
                     <div style="font-size: 1.8em; margin-bottom: 8px; color: #dc2626; font-weight: bold;">[提示]</div>
                     <h3 style="margin: 0 0 10px 0; color: #b91c1c; font-size: 1.15em;">分析判賠行情失敗</h3>
@@ -3401,3 +3617,27 @@ async function uploadZipFile() {
         if (notice) notice.style.display = 'none';
     }
 }
+
+// ==========================================
+// 搜尋列輸入輔助
+// ==========================================
+function clearQuickInput() {
+    const el = document.getElementById('quickKeywordInput');
+    if (el) {
+        el.value = '';
+        el.focus();
+        const clearBtn = document.getElementById('btnClearSearch');
+        if (clearBtn) clearBtn.style.display = 'none';
+    }
+}
+
+// 監聽 quickKeywordInput 輸入動態控制清除按鈕
+document.addEventListener('DOMContentLoaded', () => {
+    const kwInput = document.getElementById('quickKeywordInput');
+    const clearBtn = document.getElementById('btnClearSearch');
+    if (kwInput && clearBtn) {
+        kwInput.addEventListener('input', () => {
+            clearBtn.style.display = kwInput.value.trim() ? 'inline-flex' : 'none';
+        });
+    }
+});

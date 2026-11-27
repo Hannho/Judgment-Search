@@ -3,13 +3,64 @@ import json
 import asyncio
 import re
 from typing import Optional
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_community.chat_models import ChatLlamaCpp
 
 router = APIRouter()
+
+
+class ClientDisconnectedError(Exception):
+    """用戶端主動關閉或中斷連線"""
+    pass
+
+
+async def run_cancellable_chain(
+    chain,
+    inputs: dict,
+    request: Request,
+    timeout: Optional[float] = None,
+    on_token=None,
+) -> str:
+    """
+    以串流 (astream) 方式執行 LLM，於每個 token 生成後立即檢查：
+    1. 用戶端是否已關閉/中斷連線 (request.is_disconnected())
+    2. 是否超過指定 timeout
+    一旦偵測到中斷或超時，立刻關閉生成器 (aclose)，讓底層 llama.cpp 在下一個 token 即刻停止運算並釋放鎖。
+    """
+    loop = asyncio.get_running_loop()
+    start_time = loop.time()
+    chunks = []
+
+    async with _llm_lock:
+        if await request.is_disconnected():
+            raise ClientDisconnectedError("Client disconnected before generation")
+
+        agen = chain.astream(inputs)
+        try:
+            async for chunk in agen:
+                if await request.is_disconnected():
+                    print("[AI Cancel] 偵測到用戶端已關閉功能視窗，立即中止 LLM 運算")
+                    raise ClientDisconnectedError("Client disconnected")
+
+                if timeout is not None and (loop.time() - start_time) > timeout:
+                    print(f"[AI Timeout] LLM 生成超過 {timeout} 秒，立即中止運算")
+                    raise asyncio.TimeoutError(f"LLM exceeded {timeout}s")
+
+                token_text = chunk.content if hasattr(chunk, "content") else str(chunk)
+                if token_text:
+                    chunks.append(token_text)
+                    if on_token is not None:
+                        await on_token(token_text)
+        finally:
+            try:
+                await agen.aclose()
+            except Exception:
+                pass
+
+    return "".join(chunks).strip()
 
 class MultiQAQuery(BaseModel):
     judgments_content: list[str]
@@ -220,7 +271,7 @@ custom_reduce_prompt = ChatPromptTemplate.from_messages([
 # 核心 API 端點
 # ==========================================
 @router.post("/ask_multiple")
-async def ask_ai_multiple(query: MultiQAQuery):
+async def ask_ai_multiple(query: MultiQAQuery, request: Request):
     if not query.judgments_content:
         return {"answer": "目前沒有任何案件資料可供閱讀。"}
 
@@ -252,14 +303,13 @@ async def ask_ai_multiple(query: MultiQAQuery):
             ])
             
             direct_chain = direct_prompt | llm
-            async with _llm_lock:
-                final_res = await direct_chain.ainvoke({
-                    "context": single_doc,
-                    "question": query.question
-                })
+            output_text = await run_cancellable_chain(
+                direct_chain,
+                {"context": single_doc, "question": query.question},
+                request,
+            )
             
             # 若仍輸出空字串，提供防呆回傳
-            output_text = final_res.content.strip()
             if not output_text:
                 output_text = "模型未能順利生成文字，請嘗試稍微調整提問方式或縮短送入的案件長度。"
                 
@@ -290,33 +340,41 @@ async def ask_ai_multiple(query: MultiQAQuery):
         print(f"[AI Info] 正在循序進行 {len(valid_cases)} 篇裁判書重點萃取...")
         extracted_summaries = []
         for i, c in enumerate(valid_cases):
+            if await request.is_disconnected():
+                raise ClientDisconnectedError("Client disconnected during map phase")
             clean_case_text = c[:3500]
             try:
-                async with _llm_lock:
-                    res = await map_chain.ainvoke({"single_case_text": clean_case_text})
-                extracted_summaries.append(f"=== 【案件 {i+1} 摘要】 ===\n{res.content.strip()}\n")
+                res_text = await run_cancellable_chain(
+                    map_chain,
+                    {"single_case_text": clean_case_text},
+                    request,
+                )
+                extracted_summaries.append(f"=== 【案件 {i+1} 摘要】 ===\n{res_text}\n")
+            except ClientDisconnectedError:
+                raise
             except Exception as e:
                 extracted_summaries.append(f"=== 【案件 {i+1} 摘要】 ===\n（此案件抽取失敗：{str(e)}）\n")
+
+        if await request.is_disconnected():
+            raise ClientDisconnectedError("Client disconnected before reduce phase")
 
         combined_context = "\n".join(extracted_summaries)
         print("[AI Info] 所有案件萃取完成，正在執行 Reduce 跨案比對彙整...")
 
         # Reduce 階段：跨案件比對與統整
-        async with _llm_lock:
-            if mode == "custom" and query.custom_instruction and query.custom_instruction.strip():
-                final_response = await reduce_chain.ainvoke({
-                    "context": combined_context,
-                    "instruction": query.custom_instruction.strip(),
-                    "input": query.question
-                })
-            else:
-                final_response = await reduce_chain.ainvoke({
-                    "context": combined_context,
-                    "input": query.question
-                })
+        reduce_inputs = {
+            "context": combined_context,
+            "input": query.question
+        }
+        if mode == "custom" and query.custom_instruction and query.custom_instruction.strip():
+            reduce_inputs["instruction"] = query.custom_instruction.strip()
 
-        return {"answer": final_response.content}
+        final_text = await run_cancellable_chain(reduce_chain, reduce_inputs, request)
+        return {"answer": final_text}
 
+    except ClientDisconnectedError:
+        print("[AI Cancel] /ask_multiple 已依用戶端中斷請求停止執行")
+        return {"answer": "已停止生成。"}
     except Exception as e:
         return {"answer": f"本地 AI 處理失敗，錯誤詳情：{str(e)}"}
 
@@ -325,7 +383,7 @@ async def ask_ai_multiple(query: MultiQAQuery):
 # 串流 API 端點 (SSE 逐字輸出與即時進度更新)
 # ==========================================
 @router.post("/ask_stream")
-async def ask_ai_stream(query: MultiQAQuery):
+async def ask_ai_stream(query: MultiQAQuery, request: Request):
     async def event_generator():
         if not query.judgments_content:
             yield f"data: {json.dumps({'type': 'error', 'text': '目前沒有任何案件資料可供閱讀。'}, ensure_ascii=False)}\n\n"
@@ -344,88 +402,120 @@ async def ask_ai_stream(query: MultiQAQuery):
 
         mode = (query.task_mode or "general").lower()
 
-        # 情境 A：單篇案件直出
-        if len(valid_cases) == 1:
-            yield f"data: {json.dumps({'type': 'status', 'text': '正在閱讀並分析裁判書核心爭點與理由...'}, ensure_ascii=False)}\n\n"
-            single_doc = valid_cases[0][:4000]
-            direct_prompt = ChatPromptTemplate.from_messages([
-                ("system", "你是一位專業的中華民國司法 AI 助理。請依據提供的判決書內容回答問題，切勿憑空捏造。"),
-                ("human", "【裁判書內容】：\n{context}\n\n【問題】：\n{question}\n\n請根據上方判決的【主文】與【理由】，詳細分析並說明法院判斷的具體原因：")
-            ])
-            direct_chain = direct_prompt | llm
-            try:
-                async with _llm_lock:
-                    async for chunk in direct_chain.astream({"context": single_doc, "question": query.question}):
-                        token_text = chunk.content if hasattr(chunk, 'content') else str(chunk)
-                        if token_text:
-                            yield f"data: {json.dumps({'type': 'token', 'text': token_text}, ensure_ascii=False)}\n\n"
+        try:
+            # 情境 A：單篇案件直出
+            if len(valid_cases) == 1:
+                yield f"data: {json.dumps({'type': 'status', 'text': '正在閱讀並分析裁判書核心爭點與理由...'}, ensure_ascii=False)}\n\n"
+                single_doc = valid_cases[0][:4000]
+                direct_prompt = ChatPromptTemplate.from_messages([
+                    ("system", "你是一位專業的中華民國司法 AI 助理。請依據提供的判決書內容回答問題，切勿憑空捏造。"),
+                    ("human", "【裁判書內容】：\n{context}\n\n【問題】：\n{question}\n\n請根據上方判決的【主文】與【理由】，詳細分析並說明法院判斷的具體原因：")
+                ])
+                direct_chain = direct_prompt | llm
+                token_queue: asyncio.Queue = asyncio.Queue()
+
+                async def _on_token(tok: str):
+                    await token_queue.put(tok)
+
+                async def _run():
+                    try:
+                        await run_cancellable_chain(
+                            direct_chain,
+                            {"context": single_doc, "question": query.question},
+                            request,
+                            on_token=_on_token,
+                        )
+                    finally:
+                        await token_queue.put(None)
+
+                task = asyncio.create_task(_run())
+                while True:
+                    tok = await token_queue.get()
+                    if tok is None:
+                        break
+                    yield f"data: {json.dumps({'type': 'token', 'text': tok}, ensure_ascii=False)}\n\n"
+                await task
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
-            except Exception:
+
+            # 情境 B：多篇案件依序 Map-Reduce（即時回報進度）
+            if mode == "issues":
+                map_chain = issues_map_prompt | llm
+                reduce_chain = issues_reduce_prompt | llm
+            elif mode == "damages":
+                map_chain = civil_map_prompt | llm
+                reduce_chain = civil_reduce_prompt | llm
+            elif mode == "criminal":
+                map_chain = criminal_map_prompt | llm
+                reduce_chain = criminal_reduce_prompt | llm
+            elif mode == "custom" and query.custom_instruction and query.custom_instruction.strip():
+                map_chain = generic_map_prompt | llm
+                reduce_chain = custom_reduce_prompt | llm
+            else:
+                map_chain = generic_map_prompt | llm
+                reduce_chain = generic_reduce_prompt | llm
+
+            extracted_summaries = []
+            for i, c in enumerate(valid_cases):
+                if await request.is_disconnected():
+                    raise ClientDisconnectedError("Client disconnected during map phase")
+                yield f"data: {json.dumps({'type': 'status', 'text': f'正在萃取第 {i+1}/{len(valid_cases)} 篇裁判書重點與爭點...'}, ensure_ascii=False)}\n\n"
+                clean_case_text = c[:3500]
                 try:
-                    async with _llm_lock:
-                        res = await direct_chain.ainvoke({"context": single_doc, "question": query.question})
-                    yield f"data: {json.dumps({'type': 'token', 'text': res.content.strip()}, ensure_ascii=False)}\n\n"
-                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                    return
-                except Exception as err:
-                    yield f"data: {json.dumps({'type': 'error', 'text': f'生成失敗：{str(err)}'}, ensure_ascii=False)}\n\n"
-                    return
+                    res_text = await run_cancellable_chain(
+                        map_chain,
+                        {"single_case_text": clean_case_text},
+                        request,
+                    )
+                    extracted_summaries.append(f"=== 【案件 {i+1} 摘要】 ===\n{res_text}\n")
+                except ClientDisconnectedError:
+                    raise
+                except Exception as e:
+                    extracted_summaries.append(f"=== 【案件 {i+1} 摘要】 ===\n（此案件抽取失敗：{str(e)}）\n")
 
-        # 情境 B：多篇案件依序 Map-Reduce（即時回報進度）
-        if mode == "issues":
-            map_chain = issues_map_prompt | llm
-            reduce_chain = issues_reduce_prompt | llm
-        elif mode == "damages":
-            map_chain = civil_map_prompt | llm
-            reduce_chain = civil_reduce_prompt | llm
-        elif mode == "criminal":
-            map_chain = criminal_map_prompt | llm
-            reduce_chain = criminal_reduce_prompt | llm
-        elif mode == "custom" and query.custom_instruction and query.custom_instruction.strip():
-            map_chain = generic_map_prompt | llm
-            reduce_chain = custom_reduce_prompt | llm
-        else:
-            map_chain = generic_map_prompt | llm
-            reduce_chain = generic_reduce_prompt | llm
+            if await request.is_disconnected():
+                raise ClientDisconnectedError("Client disconnected before reduce phase")
 
-        extracted_summaries = []
-        for i, c in enumerate(valid_cases):
-            yield f"data: {json.dumps({'type': 'status', 'text': f'正在萃取第 {i+1}/{len(valid_cases)} 篇裁判書重點與爭點...'}, ensure_ascii=False)}\n\n"
-            clean_case_text = c[:3500]
-            try:
-                async with _llm_lock:
-                    res = await map_chain.ainvoke({"single_case_text": clean_case_text})
-                extracted_summaries.append(f"=== 【案件 {i+1} 摘要】 ===\n{res.content.strip()}\n")
-            except Exception as e:
-                extracted_summaries.append(f"=== 【案件 {i+1} 摘要】 ===\n（此案件抽取失敗：{str(e)}）\n")
+            combined_context = "\n".join(extracted_summaries)
+            yield f"data: {json.dumps({'type': 'status', 'text': '各案重點萃取完成，正在生成跨案綜合比對報告...'}, ensure_ascii=False)}\n\n"
 
-        combined_context = "\n".join(extracted_summaries)
+            reduce_inputs = {
+                "context": combined_context,
+                "input": query.question
+            }
+            if mode == "custom" and query.custom_instruction and query.custom_instruction.strip():
+                reduce_inputs["instruction"] = query.custom_instruction.strip()
 
-        yield f"data: {json.dumps({'type': 'status', 'text': '各案重點萃取完成，正在生成跨案綜合比對報告...'}, ensure_ascii=False)}\n\n"
+            token_queue: asyncio.Queue = asyncio.Queue()
 
-        reduce_inputs = {
-            "context": combined_context,
-            "input": query.question
-        }
-        if mode == "custom" and query.custom_instruction and query.custom_instruction.strip():
-            reduce_inputs["instruction"] = query.custom_instruction.strip()
+            async def _on_reduce_token(tok: str):
+                await token_queue.put(tok)
 
-        try:
-            async with _llm_lock:
-                async for chunk in reduce_chain.astream(reduce_inputs):
-                    token_text = chunk.content if hasattr(chunk, 'content') else str(chunk)
-                    if token_text:
-                        yield f"data: {json.dumps({'type': 'token', 'text': token_text}, ensure_ascii=False)}\n\n"
+            async def _run_reduce():
+                try:
+                    await run_cancellable_chain(
+                        reduce_chain,
+                        reduce_inputs,
+                        request,
+                        on_token=_on_reduce_token,
+                    )
+                finally:
+                    await token_queue.put(None)
+
+            task = asyncio.create_task(_run_reduce())
+            while True:
+                tok = await token_queue.get()
+                if tok is None:
+                    break
+                yield f"data: {json.dumps({'type': 'token', 'text': tok}, ensure_ascii=False)}\n\n"
+            await task
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
-        except Exception:
-            try:
-                async with _llm_lock:
-                    final_res = await reduce_chain.ainvoke(reduce_inputs)
-                yield f"data: {json.dumps({'type': 'token', 'text': final_res.content.strip()}, ensure_ascii=False)}\n\n"
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
-            except Exception as err:
-                yield f"data: {json.dumps({'type': 'error', 'text': f'統整生成失敗：{str(err)}'}, ensure_ascii=False)}\n\n"
+
+        except ClientDisconnectedError:
+            print("[AI Cancel] /ask_stream 串流已依用戶端中斷請求停止執行")
+            return
+        except Exception as err:
+            yield f"data: {json.dumps({'type': 'error', 'text': f'生成失敗：{str(err)}'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -439,7 +529,7 @@ class CaseBriefRequest(BaseModel):
 
 
 @router.post("/case_brief")
-async def generate_case_brief(req: CaseBriefRequest):
+async def generate_case_brief(req: CaseBriefRequest, request: Request):
     """
     一鍵生成 AI 案件速覽小卡 (Case Brief)
     萃取：核心主文結論、爭點聚焦、原告主張 vs. 被告抗辯、法院關鍵理由心證
@@ -464,14 +554,18 @@ async def generate_case_brief(req: CaseBriefRequest):
         ])
         chain = prompt | llm
         try:
-            async with _llm_lock:
-                res = await asyncio.wait_for(
-                    chain.ainvoke({"title": req.title or "", "case_sample": case_sample[:3000]}),
-                    timeout=5.0
-                )
-            return {"success": True, "brief": res.content.strip(), "source": "ai"}
+            brief_text = await run_cancellable_chain(
+                chain,
+                {"title": req.title or "", "case_sample": case_sample[:3000]},
+                request,
+                timeout=5.0,
+            )
+            return {"success": True, "brief": brief_text, "source": "ai"}
+        except ClientDisconnectedError:
+            print("[case_brief] 用戶端已收起速覽小卡，停止 LLM 生成")
+            return {"success": False, "cancelled": True}
         except Exception as e:
-            print(f"[case_brief] LLM 生成超時或異常，退回結構化萃取: {e}")
+            print(f"[case_brief] LLM 生成超時或異常，已中止背景運算並退回結構化萃取: {e}")
 
     # Fallback 結構化秒級解析
     full_text = req.content or ""
@@ -521,7 +615,7 @@ class CompareDiffRequest(BaseModel):
 
 
 @router.post("/compare_diff")
-async def compare_judgments_diff(req: CompareDiffRequest):
+async def compare_judgments_diff(req: CompareDiffRequest, request: Request):
     """
     一鍵歷審翻轉 / 爭點變更智慧對照：
     比對兩件裁判（例如原審與上訴審，或兩篇爭議裁判）的主文差異、爭點心證逆轉與認定變更
@@ -546,14 +640,18 @@ async def compare_judgments_diff(req: CompareDiffRequest):
         ])
         chain = prompt | llm
         try:
-            async with _llm_lock:
-                res = await asyncio.wait_for(
-                    chain.ainvoke({"sample_a": sample_a, "sample_b": sample_b}),
-                    timeout=5.0
-                )
-            return {"success": True, "diff": res.content.strip(), "source": "ai"}
+            diff_text = await run_cancellable_chain(
+                chain,
+                {"sample_a": sample_a, "sample_b": sample_b},
+                request,
+                timeout=5.0,
+            )
+            return {"success": True, "diff": diff_text, "source": "ai"}
+        except ClientDisconnectedError:
+            print("[compare_diff] 用戶端已關閉對照視窗，停止 LLM 生成")
+            return {"success": False, "cancelled": True}
         except Exception as e:
-            print(f"[compare_diff] LLM 生成超時或異常，轉為結構化對照: {e}")
+            print(f"[compare_diff] LLM 生成超時或異常，已中止背景運算並轉為結構化對照: {e}")
 
     # Fallback 結構化對照分析
     main_a = (req.main_text_a or "").strip()

@@ -338,6 +338,9 @@ function enterFavorites() {
     isFavoritesMode = true;
     document.getElementById('facetSidebar').style.display = 'none';
     document.getElementById('sidePanel').style.display = 'none';
+    if (typeof pushAppHistory === 'function') {
+        pushAppHistory({ view: 'favorites', page: 1, payload: {} }, '#favorites');
+    }
     showFavorites();
 }
 

@@ -595,9 +595,11 @@ def get_compensation_analytics(q: CompensationAnalyticsQuery):
             title_kw = (q.title or "").strip()
 
             if kw:
-                # 使用有 GIN 索引的 title 與 main_text 欄位，秒級響應
-                where_clauses.append("(title LIKE %s OR main_text LIKE %s)")
-                params.extend([f"%{kw}%", f"%{kw}%"])
+                # 支援多關鍵字空格拆詞，使用有 GIN 索引的 title 與 main_text 欄位
+                tokens = [t.strip() for t in kw.split() if t.strip()]
+                for tok in tokens:
+                    where_clauses.append("(title LIKE %s OR main_text LIKE %s)")
+                    params.extend([f"%{tok}%", f"%{tok}%"])
             elif title_kw:
                 where_clauses.append("title LIKE %s")
                 params.append(f"%{title_kw}%")

@@ -40,12 +40,26 @@ async def run_scheduler_loop():
             now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"[scheduler] 凌晨 03:00 排程時間到達，開始呼叫司法院每日異動清單 API (JList / JDoc)...")
 
-            # 於獨立執行緒中執行同步任務，避免阻塞非同步事件循環
-            res = await asyncio.to_thread(sync_daily_judgments)
+            # 於獨立執行緒中執行同步任務，若遇司法院官方短暫伺服器故障，自動重試最多 3 次（間隔 10 分鐘）
+            max_retries = 3
+            retry_delay = 600  # 10 分鐘
+            res = None
+
+            for attempt in range(1, max_retries + 1):
+                res = await asyncio.to_thread(sync_daily_judgments)
+                if res and res.get("success"):
+                    print(f"[scheduler] 每日同步作業執行成功 (第 {attempt} 次)：{res}")
+                    break
+                else:
+                    err = res.get("error") if res else "未知錯誤"
+                    if attempt < max_retries:
+                        print(f"[scheduler] 第 {attempt} 次同步失敗（{err}），將於 {retry_delay // 60} 分鐘後自動重試...")
+                        await asyncio.sleep(retry_delay)
+                    else:
+                        print(f"[scheduler] 已達最大重試次數 ({max_retries} 次)，本次排程結束。")
 
             scheduler_state["last_run_time"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             scheduler_state["last_run_result"] = res
-            print(f"[scheduler] 每日同步作業執行完成：{res}")
 
         except asyncio.CancelledError:
             print("[scheduler] 排程器收到中止信號，已停止。")

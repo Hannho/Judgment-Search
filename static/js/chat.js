@@ -33,7 +33,23 @@ function onTaskModeChange() {
     }
 }
 
+let currentChatAbortController = null;
+
+window.abortActiveChatRequest = function() {
+    if (currentChatAbortController) {
+        try {
+            currentChatAbortController.abort();
+        } catch (e) {}
+        currentChatAbortController = null;
+    }
+    const chatInput = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('chatSendBtn');
+    if (chatInput) chatInput.disabled = false;
+    if (sendBtn) sendBtn.disabled = false;
+};
+
 function clearChatMessages() {
+    window.abortActiveChatRequest();
     const chatMessages = document.getElementById('chatMessages');
     const chatInput = document.getElementById('chatInput');
     const sendBtn = document.getElementById('chatSendBtn');
@@ -222,6 +238,11 @@ function sendChatMessage(directItem = null) {
     const taskMode = document.getElementById('chatTaskMode') ? document.getElementById('chatTaskMode').value : 'general';
     const customInstruction = document.getElementById('customInstruction') ? document.getElementById('customInstruction').value.trim() : '';
 
+    // 若已有進行中的請求，先中止舊請求避免背景資源浪費
+    window.abortActiveChatRequest();
+    const controller = new AbortController();
+    currentChatAbortController = controller;
+
     appendChatMessage('user', escapeHtml(question));
     input.value = '';
     input.disabled = true;
@@ -232,6 +253,7 @@ function sendChatMessage(directItem = null) {
             <span></span><span></span><span></span>
         </div>
         <span style="color:#64748b; font-size:0.88em; margin-left:4px;">AI 正在以 <strong>${getTaskModeLabel(taskMode)}</strong> 模式研讀您選取的 <strong>${selectedJudgments.length}</strong> 筆案件中...</span>
+        <button type="button" class="btn-toggle" style="margin-left:8px; padding:1px 8px; font-size:0.76em; color:#dc2626; border-color:#fecaca; background:#fef2f2;" onclick="window.abortActiveChatRequest()">停止生成</button>
     `);
 
     const contentsToSent = selectedJudgments.map((item, idx) => {
@@ -280,7 +302,8 @@ function sendChatMessage(directItem = null) {
             const response = await fetch('/api/ai/ask_stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
+                signal: controller.signal
             });
 
             if (!response.ok || !response.body) {
@@ -292,6 +315,10 @@ function sendChatMessage(directItem = null) {
             let buffer = "";
 
             while (true) {
+                if (controller.signal.aborted) {
+                    try { await reader.cancel(); } catch (e) {}
+                    throw new DOMException('Aborted', 'AbortError');
+                }
                 const { value, done } = await reader.read();
                 if (done) break;
 
@@ -307,7 +334,7 @@ function sendChatMessage(directItem = null) {
                         try {
                             const data = JSON.parse(jsonStr);
                             if (data.type === 'status') {
-                                botBubble.innerHTML = `<span style="color:#666;">${escapeHtml(data.text)}</span>`;
+                                botBubble.innerHTML = `<span style="color:#666;">${escapeHtml(data.text)}</span> <button type="button" class="btn-toggle" style="margin-left:6px; padding:1px 7px; font-size:0.75em; color:#dc2626; border-color:#fecaca; background:#fef2f2;" onclick="window.abortActiveChatRequest()">停止</button>`;
                             } else if (data.type === 'token') {
                                 fullAnswer += data.text;
                                 botBubble.innerHTML = parseMarkdownToHtml(fullAnswer);
@@ -327,12 +354,21 @@ function sendChatMessage(directItem = null) {
                 botBubble.innerHTML = `<span style="color:#666;">模型分析完畢，未產生具體文字。</span>`;
             }
         } catch (streamErr) {
+            if (streamErr.name === 'AbortError' || controller.signal.aborted) {
+                if (!fullAnswer) {
+                    botBubble.innerHTML = `<span style="color:#64748b;">已停止 AI 生成。</span>`;
+                } else {
+                    botBubble.innerHTML = parseMarkdownToHtml(fullAnswer) + `<div style="margin-top:6px; font-size:0.8em; color:#94a3b8;">（已手動停止後續生成）</div>`;
+                }
+                return;
+            }
             console.warn("串流嘗試失敗，退回傳統模式呼叫:", streamErr);
             try {
                 const res = await fetch('/api/ai/ask_multiple', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(payload),
+                    signal: controller.signal
                 });
                 const data = await res.json();
                 let rawAnswer = "";
@@ -345,10 +381,17 @@ function sendChatMessage(directItem = null) {
                 }
                 botBubble.innerHTML = parseMarkdownToHtml(rawAnswer);
             } catch (err) {
+                if (err.name === 'AbortError' || controller.signal.aborted) {
+                    botBubble.innerHTML = `<span style="color:#64748b;">已停止 AI 生成。</span>`;
+                    return;
+                }
                 console.error(err);
                 botBubble.innerHTML = `<span style="color:#d32f2f;">連線失敗：請確認後端伺服器與本機模型服務是否正常啟動。</span>`;
             }
         } finally {
+            if (currentChatAbortController === controller) {
+                currentChatAbortController = null;
+            }
             if (input) {
                 input.disabled = false;
                 input.focus();
