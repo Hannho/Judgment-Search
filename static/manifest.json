@@ -1,0 +1,25 @@
+{
+  "name": "裁判書查詢系統",
+  "short_name": "裁判檢索",
+  "description": "裁判書智慧檢索、歷審脈絡、心證畫像與判賠行情分析系統",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "./static/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./static/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

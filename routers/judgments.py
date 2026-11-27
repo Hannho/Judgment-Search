@@ -215,15 +215,33 @@ def get_judgments_list(query: JudgmentSearchQuery):
             where_sql, params = build_search_conditions(query)
             
             order_clause = "ORDER BY date DESC"
-            if query.sort_type == "date_asc": order_clause = "ORDER BY date ASC"
-            elif query.sort_type == "no_desc": order_clause = "ORDER BY NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::bigint DESC NULLS LAST"
-            elif query.sort_type == "no_asc": order_clause = "ORDER BY NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::bigint ASC NULLS LAST"
-            elif query.sort_type == "size_desc": order_clause = "ORDER BY size_kb DESC"
-            elif query.sort_type == "size_asc": order_clause = "ORDER BY size_kb ASC"
+            if query.sort_type == "date_asc":
+                order_clause = "ORDER BY date ASC"
+            elif query.sort_type == "no_desc":
+                # 排除非數字案號並移除 NULLS LAST，才能命中 idx_judgments_case_no_num 反向索引（避免全表 895 萬筆掃描）
+                where_sql += " AND NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::bigint IS NOT NULL"
+                order_clause = "ORDER BY NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::bigint DESC"
+            elif query.sort_type == "no_asc":
+                where_sql += " AND NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::bigint IS NOT NULL"
+                order_clause = "ORDER BY NULLIF(SUBSTRING(case_no FROM '^[0-9]+'), '')::bigint ASC"
+            elif query.sort_type == "size_desc":
+                order_clause = "ORDER BY size_kb DESC"
+            elif query.sort_type == "size_asc":
+                order_clause = "ORDER BY size_kb ASC"
             
             limit = 10
-            offset = (query.page - 1) * limit
-            data_sql = f"SELECT id, year, case_type, case_no, date, title, content, pdf_url, main_text, reason FROM judgments {where_sql} {order_clause} LIMIT %s OFFSET %s"
+            safe_page = max(1, query.page)
+            offset = (safe_page - 1) * limit
+            # 列表查詢截斷超過 30,000 字的超大裁判內文與理由，防止「全文由大到小」一次傳輸上百 MB 卡死
+            data_sql = f"""
+                SELECT id, year, case_type, case_no, date, title,
+                       CASE WHEN length(content) > 30000 THEN left(content, 30000) ELSE content END AS content,
+                       (length(content) > 30000 OR length(reason) > 10000 OR length(main_text) > 10000) AS content_truncated,
+                       pdf_url,
+                       CASE WHEN length(main_text) > 10000 THEN left(main_text, 10000) ELSE main_text END AS main_text,
+                       CASE WHEN length(reason) > 10000 THEN left(reason, 10000) ELSE reason END AS reason
+                FROM judgments {where_sql} {order_clause} LIMIT %s OFFSET %s
+            """
             
             cursor.execute(data_sql, tuple(params + [limit, offset]))
             results = [dict(row) for row in cursor.fetchall()]

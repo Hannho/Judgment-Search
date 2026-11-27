@@ -3,14 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="google" content="notranslate">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>裁判書搜尋與歷審查詢系統</title>
+    <!-- PWA 行動端設定 -->
+    <link rel="manifest" href="./manifest.json?v=2">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="裁判檢索">
+    <link rel="apple-touch-icon" href="./static/favicon.png">
     <!-- 載入現代旗艦字型：Inter (英文/數字/UI) + Noto Sans TC (思源黑體) + Noto Serif TC (思源明體) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;600;700&family=Noto+Serif+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- 載入外部 CSS -->
-    <link rel="stylesheet" href="./static/css/style.css?v=27">
+    <link rel="stylesheet" href="./static/css/style.css?v=33">
     <link rel="icon" type="image/png" href="./static/favicon.png">
 </head>
 <body class="notranslate" translate="no">
@@ -32,7 +39,7 @@
             <!-- 使用者身分管理 -->
             <div class="user-capsule">
                 <span class="user-capsule-label">👤 使用者：</span>
-                <select id="userSelect" onchange="onUserChange(this)" class="user-capsule-select"></select>
+                <select id="userSelect" onchange="onUserChange(this)" onfocus="if(usersList.length===0) loadUsers();" class="user-capsule-select"></select>
                 <div class="user-capsule-actions">
                     <button class="user-action-btn" type="button" onclick="editUser()" title="修改使用者名稱">編輯</button>
                     <button class="user-action-btn" type="button" onclick="deleteUser()" style="color: #f87171;" title="刪除使用者">刪除</button>
@@ -771,10 +778,47 @@
         </div>
     </div>
 
+    <!-- 手機版底部快捷導覽列 (精簡 4 大核心頁籤，僅於小螢幕顯示) -->
+    <nav id="mobileBottomNav" class="mobile-bottom-nav" aria-label="行動版導覽列">
+        <button type="button" class="mobile-nav-btn active" data-tab="search" onclick="mobileNavTo('search')">
+            <span class="mnav-label">搜尋</span>
+        </button>
+        <button type="button" class="mobile-nav-btn" data-tab="detail" onclick="mobileNavTo('detail')">
+            <span class="mnav-label">內文</span>
+        </button>
+        <button type="button" class="mobile-nav-btn" data-tab="history" onclick="mobileNavTo('history')">
+            <span class="mnav-label">歷審/法條</span>
+        </button>
+        <button type="button" class="mobile-nav-btn" data-tab="fav" onclick="mobileNavTo('fav')">
+            <span class="mnav-label">資料夾</span>
+        </button>
+    </nav>
+
     <!-- 依序載入模組化 JS 檔案 -->
-    <script src="./static/js/globals.js?v=27"></script>
-    <script src="./static/js/user.js?v=27"></script>
-    <script src="./static/js/app.js?v=29"></script>
-    <script src="./static/js/highlight.js?v=27"></script>
-    <script src="./static/js/chat.js?v=27"></script></body>
+    <script src="./static/js/globals.js?v=36"></script>
+    <script src="./static/js/user.js?v=36"></script>
+    <script src="./static/js/app.js?v=36"></script>
+    <script src="./static/js/highlight.js?v=36"></script>
+    <script src="./static/js/chat.js?v=36"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            let swRefreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (swRefreshing) return;
+                swRefreshing = true;
+                window.location.reload();
+            });
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').then((reg) => {
+                    // 每次將 App 從背景切回前景時自動檢查是否有新版
+                    document.addEventListener('visibilitychange', () => {
+                        if (document.visibilityState === 'visible') {
+                            reg.update().catch(() => {});
+                        }
+                    });
+                }).catch(() => {});
+            });
+        }
+    </script>
+</body>
 </html>

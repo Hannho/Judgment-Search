@@ -63,16 +63,30 @@ app.add_api_route("/api/compare_diff", ai.compare_judgments_diff, methods=["POST
 # 將前端靜態檔案目錄對應到 /static
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+NO_CACHE_HEADERS = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
 # 根目錄首頁導向
 @app.get("/")
 def read_index():
     if os.path.exists("static/index.html"):
-        return FileResponse("static/index.html")
+        return FileResponse("static/index.html", headers=NO_CACHE_HEADERS)
     return {"message": "HTML template not found"}
 
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     return FileResponse("static/favicon.png")
+
+@app.get("/sw.js", include_in_schema=False)
+def service_worker():
+    return FileResponse("static/sw.js", media_type="application/javascript", headers=NO_CACHE_HEADERS)
+
+@app.get("/manifest.json", include_in_schema=False)
+def web_manifest():
+    return FileResponse("static/manifest.json", media_type="application/manifest+json", headers=NO_CACHE_HEADERS)
 
 # 效能與錯誤日誌紀錄中介層
 @app.middleware("http")

@@ -58,15 +58,33 @@ function toggleSideFav() {
         toggleFav(currentSideId);
     }
 }
-async function loadUsers(selectId) {
+async function loadUsers(selectId, retryCount = 0) {
+    const sel = document.getElementById('userSelect');
+    let loadErr = '';
     try {
-        const res = await fetch('/api/users');
-        usersList = (await res.json()).data || [];
+        const res = await fetch('/api/users', {
+            cache: 'no-store',
+            credentials: 'same-origin',
+            headers: { 'ngrok-skip-browser-warning': 'true' }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        usersList = json.data || [];
     } catch (e) {
-        console.error(e);
+        console.error('loadUsers failed:', e);
+        loadErr = e && e.message ? e.message : '連線失敗';
+        if (retryCount < 2) {
+            setTimeout(() => loadUsers(selectId, retryCount + 1), 800);
+            if (sel) sel.innerHTML = '<option value="">載入使用者中...</option>';
+            return;
+        }
         usersList = [];
     }
-    const sel = document.getElementById('userSelect');
+    if (!sel) return;
+    if (loadErr) {
+        sel.innerHTML = `<option value="">載入失敗 (${escapeHtml(loadErr)})</option>`;
+        return;
+    }
     sel.innerHTML = '<option value="">— 選擇使用者 —</option>' +
         usersList.map(u => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
     const target = (selectId !== undefined) ? selectId : localStorage.getItem('current_user_id');

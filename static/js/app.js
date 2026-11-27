@@ -1217,8 +1217,29 @@ function exportCaseReport() {
 
 async function showFullContent(id, itemOverride = null, isFreshOpen = true) {
     // itemOverride：從歷審清單開啟「本地資料庫已有」的判決時使用（該筆不一定在目前搜尋結果裡）
-    const item = itemOverride || judgmentsData.find(j => j.id === id);
+    let item = itemOverride || judgmentsData.find(j => j.id === id);
     if (!item) return;
+
+    // 若該筆為超大裁判書且列表僅載入前段預覽，點擊開啟時即時補抓完整全文
+    if (item.content_truncated) {
+        try {
+            const fullRes = await fetch('/api/scraper/get_judgment', {
+                method: 'POST',
+                headers: apiHeaders(),
+                body: JSON.stringify({ id: item.id })
+            });
+            if (fullRes.ok) {
+                const fullItem = await fullRes.json();
+                if (fullItem && fullItem.id) {
+                    item = fullItem;
+                    const idx = judgmentsData.findIndex(j => j && j.id === id);
+                    if (idx !== -1) judgmentsData[idx] = fullItem;
+                }
+            }
+        } catch (e) {
+            console.warn('載入完整超大裁判書失敗，先顯示預覽:', e);
+        }
+    }
 
     if (isFreshOpen) {
         judgmentNavigationStack = [];
@@ -1260,6 +1281,15 @@ async function showFullContent(id, itemOverride = null, isFreshOpen = true) {
 
     document.getElementById('sideBody').textContent = getSideText(item);
     document.getElementById('sidePanel').style.display = "block";
+
+    // 手機版：點選判決後自動捲動跳轉至內文，並同步切換底部導覽高亮
+    if (window.innerWidth <= 900) {
+        if (typeof setMobileNavActive === 'function') setMobileNavActive('detail');
+        setTimeout(() => {
+            const panel = document.getElementById('sidePanel');
+            if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 60);
+    }
 
     // 載入重點與註解 (在 highlight.js 中)
     currentHighlights = [];
@@ -1514,6 +1544,9 @@ function closeSidePanel() {
     closeHistoryPreview();
     if (!isRestoringHistoryState && window.history.state && window.history.state.view === 'detail') {
         pushAppHistory(buildListHistoryState(), '');
+    }
+    if (window.innerWidth <= 900) {
+        if (typeof setMobileNavActive === 'function') setMobileNavActive(isFavoritesMode ? 'fav' : 'search');
     }
 }
 
@@ -3641,3 +3674,40 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+// ==========================================
+// 手機版底部快捷導覽列切換
+// ==========================================
+function setMobileNavActive(tab) {
+    document.querySelectorAll('#mobileBottomNav .mobile-nav-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+}
+
+function mobileNavTo(tab) {
+    setMobileNavActive(tab);
+    if (tab === 'search') {
+        if (typeof toggleChatPanel === 'function') toggleChatPanel(false);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (tab === 'detail') {
+        if (typeof toggleChatPanel === 'function') toggleChatPanel(false);
+        const panel = document.getElementById('sidePanel');
+        if (!panel || panel.style.display === 'none') {
+            alert("請先從列表中點選一筆判決開啟全文。");
+            setMobileNavActive('search');
+            return;
+        }
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (tab === 'history') {
+        if (typeof toggleChatPanel === 'function') toggleChatPanel(false);
+        const hist = document.getElementById('historyCard');
+        if (hist) hist.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (tab === 'ai') {
+        if (typeof toggleChatPanel === 'function') toggleChatPanel(true);
+    } else if (tab === 'fav') {
+        if (typeof toggleChatPanel === 'function') toggleChatPanel(false);
+        if (typeof enterFavorites === 'function') enterFavorites();
+        const res = document.getElementById('results');
+        if (res) res.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}

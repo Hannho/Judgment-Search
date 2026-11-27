@@ -150,6 +150,35 @@ document.addEventListener('mousedown', function (e) {
     hideAnnUI();
 });
 
+document.addEventListener('touchstart', function (e) {
+    if (e.target.closest('#annMenu, #annNoteBox, #annPopover')) return;
+    const menu = document.getElementById('annMenu');
+    if (menu && menu.style.display === 'block') {
+        hideAnnUI();
+    }
+}, { passive: true });
+
+// 行動裝置/觸控螢幕：選取裁判內文後自動浮出「劃線/註記」選單（不需空白鍵）
+let _touchSelTimer = null;
+function scheduleTouchAnnotationMenu() {
+    const isTouchOrSmall = window.matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window) || window.innerWidth <= 900;
+    if (!isTouchOrSmall) return;
+    if (!currentSideId || document.getElementById('sidePanel')?.style.display === 'none') return;
+    const noteBox = document.getElementById('annNoteBox');
+    if (noteBox && noteBox.style.display === 'block') return;
+
+    clearTimeout(_touchSelTimer);
+    _touchSelTimer = setTimeout(() => {
+        const info = getSelectionInfo();
+        const menu = document.getElementById('annMenu');
+        if (!info || !menu) return;
+        pendingSel = info;
+        placeFloating(menu, info.rect);
+    }, 350);
+}
+document.addEventListener('selectionchange', scheduleTouchAnnotationMenu);
+document.addEventListener('touchend', scheduleTouchAnnotationMenu, { passive: true });
+
 document.getElementById('sidePanel')?.addEventListener('scroll', function () {
     const menu = document.getElementById('annMenu');
     const pop = document.getElementById('annPopover');
@@ -161,6 +190,10 @@ async function applyHighlightFromMenu() {
     const info = pendingSel;
     hideAnnUI();
     if (!info) return;
+    if (!currentUser) {
+        alert("請先在上方選擇使用者，重點與註解才能儲存。");
+        return;
+    }
     currentHighlights.push({ type: 'highlight', start: info.start, end: info.end, text: info.text });
     window.getSelection().removeAllRanges();
     renderHighlights();
@@ -169,6 +202,11 @@ async function applyHighlightFromMenu() {
 
 function startNoteFromMenu() {
     if (!pendingSel) return;
+    if (!currentUser) {
+        hideAnnUI();
+        alert("請先在上方選擇使用者，重點與註解才能儲存。");
+        return;
+    }
     document.getElementById('annMenu').style.display = 'none';
     editingAnnIndex = null;
     openNoteBox(pendingSel.text, "", pendingSel.rect);

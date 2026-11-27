@@ -23,7 +23,10 @@ let editingAnnIndex = null;
 // 基礎工具函式
 // ==========================================
 function apiHeaders() {
-    const h = { 'Content-Type': 'application/json' };
+    const h = {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true'
+    };
     if (currentUser) h['X-User-Id'] = String(currentUser.id);
     return h;
 }

@@ -2483,3 +2483,315 @@ mark.highlight-mark {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+/* ==========================================================================
+   手機版底部快捷導覽列 (Mobile Bottom Navigation Bar) & RWD 響應式佈局
+   ========================================================================== */
+.mobile-bottom-nav {
+    display: none;
+}
+
+@media (max-width: 900px) {
+    body {
+        max-width: 100%;
+        margin: 0;
+        padding: calc(8px + env(safe-area-inset-top)) 10px calc(74px + env(safe-area-inset-bottom)) 10px;
+    }
+
+    .app-top-bar {
+        padding: 10px 12px;
+        border-radius: var(--radius-md);
+        margin-bottom: 10px;
+        gap: 8px;
+        flex-wrap: nowrap;
+    }
+
+    .brand-title {
+        font-size: 1.05em;
+        white-space: nowrap;
+    }
+
+    /* 手機版隱藏桌機管理功能與副標題，保留使用者選單與「+ 新增」按鈕 */
+    .brand-badge,
+    .brand-subtitle,
+    .btn-header-sync,
+    .user-capsule-label,
+    .user-capsule-actions .user-action-btn:not(.btn-add-user) {
+        display: none !important;
+    }
+
+    .header-controls {
+        width: auto;
+        justify-content: flex-end;
+    }
+
+    .user-capsule {
+        flex: 0 1 auto;
+        padding: 3px 6px;
+        gap: 6px;
+    }
+
+    .user-capsule-select {
+        max-width: 120px;
+    }
+
+    .btn-add-user {
+        padding: 4px 10px;
+        font-size: 0.84em;
+        white-space: nowrap;
+    }
+
+    /* 搜尋列垂直堆疊，輸入字體 16px 防止 iOS Safari 自動縮放 */
+    .search-box {
+        padding: 10px;
+        margin-bottom: 12px;
+    }
+
+    /* 手機版隱藏繁雜的次要搜尋列（同義詞、進階搜尋表格） */
+    .search-sub-bar,
+    #advancedPanel {
+        display: none !important;
+    }
+
+    .search-command-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+        padding: 8px;
+    }
+
+    .search-court-wrapper {
+        width: 100%;
+        min-width: 0;
+        padding: 6px 8px;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .search-court-select {
+        font-size: 16px;
+    }
+
+    .search-divider {
+        display: none;
+    }
+
+    .search-input-wrapper {
+        width: 100%;
+        min-width: 0;
+        padding: 2px 6px;
+    }
+
+    .search-main-input {
+        font-size: 16px;
+    }
+
+    .btn-search-primary {
+        width: 100%;
+        padding: 10px 16px;
+        text-align: center;
+        justify-content: center;
+    }
+
+    .search-sub-bar {
+        gap: 8px;
+        margin-top: 10px;
+        padding-top: 10px;
+    }
+
+    .search-options-group {
+        width: 100%;
+        justify-content: flex-start;
+        margin-left: 0;
+    }
+
+    /* 進階搜尋表格改為單欄流式排版 */
+    .adv-table,
+    .adv-table tbody,
+    .adv-table tr,
+    .adv-table td {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .adv-label {
+        width: 100%;
+        text-align: left;
+        border-right: none;
+        padding: 6px 10px;
+        font-size: 0.85em;
+    }
+
+    .adv-table td {
+        padding: 8px 10px;
+    }
+
+    .input-medium,
+    .input-wide {
+        width: 100%;
+        box-sizing: border-box;
+        font-size: 16px;
+    }
+
+    /* 主版面改為垂直單欄 */
+    .page-layout,
+    .main-container {
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .facet-sidebar {
+        display: none !important;
+    }
+
+    .content-area {
+        width: 100%;
+    }
+
+    .list-panel {
+        width: 100%;
+        max-height: none;
+        overflow-x: hidden;
+    }
+
+    .result-table {
+        min-width: 0;
+        width: 100%;
+        table-layout: fixed;
+    }
+
+    /* 手機版隱藏「序號」與「案由」欄，保留勾選、字號摘要與日期，不需左右滑動 */
+    .result-table th:nth-child(2),
+    .result-table td:nth-child(2),
+    .result-table th:nth-child(5),
+    .result-table td:nth-child(5) {
+        display: none;
+    }
+
+    .result-table th:nth-child(1),
+    .result-table td:nth-child(1) {
+        width: 34px;
+    }
+
+    .result-table th:nth-child(4),
+    .result-table td:nth-child(4) {
+        width: 82px;
+        font-size: 0.8em;
+    }
+
+    .detail-panel {
+        position: static;
+        width: 100%;
+        max-height: none;
+        padding: 14px;
+        box-sizing: border-box;
+    }
+
+    .detail-header-row {
+        padding-right: 36px;
+    }
+
+    .detail-case-title {
+        font-size: 1.15em;
+    }
+
+    /* 手機版精簡判決工具列：只保留「案件速覽」與「複製引述」兩顆核心按鈕 */
+    .highlight-hint,
+    .typography-group,
+    .ai-btn-arg,
+    .ai-btn-comp,
+    .ai-btn-citation,
+    .ai-btn-entities,
+    .action-export-group button[onclick*="exportCaseReport"],
+    #historyViewToggle {
+        display: none !important;
+    }
+
+    .detail-toolbar-groups {
+        justify-content: flex-start;
+        gap: 8px;
+    }
+
+    .toolbar-group {
+        width: auto;
+        padding: 2px 4px;
+    }
+
+    .side-judgment-body {
+        font-size: 1rem;
+        line-height: 1.82;
+    }
+
+    /* 右側歷審、法條與 AI 助理改為滿版 */
+    .ai-sidebar {
+        width: 100%;
+        position: static;
+    }
+
+    .chat-fab {
+        bottom: calc(74px + env(safe-area-inset-bottom));
+        right: 14px;
+    }
+
+    #chatWrapper .chat-card {
+        position: fixed;
+        bottom: calc(70px + env(safe-area-inset-bottom));
+        left: 10px;
+        right: 10px;
+        width: auto;
+        max-width: none;
+        height: 68vh;
+        z-index: 1200;
+        box-shadow: 0 12px 35px rgba(15, 23, 42, 0.25);
+    }
+
+    /* 各類分析彈窗單欄自適應 */
+    .modal-content {
+        width: 95vw !important;
+        max-width: 95vw !important;
+        max-height: 88vh !important;
+        padding: 14px !important;
+        box-sizing: border-box;
+    }
+
+    .compare-grid,
+    .citation-graph-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* 底部固定導覽列 */
+    .mobile-bottom-nav {
+        display: flex;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1150;
+        background: rgba(255, 255, 255, 0.94);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-top: 1px solid #e2e8f0;
+        padding: 6px 6px calc(6px + env(safe-area-inset-bottom)) 6px;
+        justify-content: space-around;
+        align-items: center;
+        box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.08);
+    }
+
+    .mobile-nav-btn {
+        flex: 1;
+        background: transparent;
+        border: none;
+        padding: 7px 4px;
+        border-radius: 8px;
+        font-size: 0.82em;
+        font-weight: 600;
+        color: #64748b;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+    .mobile-nav-btn.active {
+        color: #2563eb;
+        background: #eff6ff;
+    }
+}
